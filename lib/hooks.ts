@@ -17,14 +17,8 @@ import {
     syncCompressionBlocks,
 } from "./messages"
 import { applyCompressOverrides } from "./messages/inject/utils"
-import { renderSystemPrompt, type PromptStore } from "./prompts"
-import { buildProtectedToolsExtension } from "./prompts/extensions/system"
+import type { PromptStore } from "./prompts"
 import { DEFAULT_COMPRESS_REASONING } from "./config"
-import {
-    applyPendingCompressionDurations,
-    buildCompressionTimingKey,
-    resolveCompressionDuration,
-} from "./compress/timing"
 import { filterMessages, filterMessagesInPlace } from "./messages/shape"
 import { getLastUserMessage, isSyntheticMessage } from "./messages/query"
 import { OUTPUT_RESERVE_TOKENS, truncateLargeToolOutputs } from "./messages/truncate-tools"
@@ -75,101 +69,6 @@ function isInternalAgentRequest(messages: WithParts[]): boolean {
     return typeof agent === "string" && INTERNAL_AGENT_NAMES.has(agent)
 }
 
-export function createSystemPromptHandler(
-    registry: SessionStateRegistry,
-    logger: Logger,
-    config: PluginConfig,
-    prompts: PromptStore,
-) {
-    return async (
-        input: {
-            sessionID?: string
-            model: {
-                id?: string
-                providerID?: string
-                limit: { context: number; input?: number; output?: number }
-            }
-        },
-        output: { system: string[] },
-    ) => {
-        // [FIX #312] Record the live limit for this model BEFORE the state
-        // guard below: the catalog is stateless and must keep accepting
-        // entries even when the session state has not been created yet, so
-        // the messages hook can reconcile a model switch on its next call.
-        registry.recordModelLimit(
-            input.model?.providerID,
-            input.model?.id,
-            input.model?.limit?.context,
-        )
-
-        // messages.transform creates the session state before this fires; if
-        // absent (internal-agent early-return), there is nothing to attribute.
-        const state = input.sessionID ? registry.get(input.sessionID) : undefined
-
-        if (!state || (state.isSubAgent && !config.allowSubAgents)) {
-            return
-        }
-
-        const systemText = output.system.join("\n")
-        if (INTERNAL_AGENT_SIGNATURES.some((sig) => systemText.includes(sig))) {
-            logger.info("Skipping DCP system prompt injection for internal agent")
-            return
-        }
-
-        // [FIX #346] Attribute the limit to the session only for real session
-        // requests: internal agents (title/summary/compaction) may run on a
-        // different model and must not overwrite the session's limit.
-        // Persist on change so a freshly spawned process (headless
-        // spawn+resume) resumes with the limit already known — the system
-        // hook is the only writer and fires AFTER messages.transform within
-        // a request, so without this the limit is learned and lost every
-        // message and the safety net never engages.
-        if (input.model?.limit?.context) {
-            const limit = input.model.limit.context
-            const providerID = input.model?.providerID
-            const modelID = input.model?.id
-            // Identity fields are only written when present: a limit without
-            // identity must not clobber the pair the messages hook relies on
-            // for staleness detection (#312).
-            const changed =
-                state.modelContextLimit !== limit ||
-                (providerID !== undefined && state.modelProviderID !== providerID) ||
-                (modelID !== undefined && state.modelID !== modelID)
-            state.modelContextLimit = limit
-            // [FIX #312 follow-up] Record WHICH model the limit belongs to so
-            // the messages hook can detect staleness on a catalog miss.
-            if (providerID !== undefined) {
-                state.modelProviderID = providerID
-            }
-            if (modelID !== undefined) {
-                state.modelID = modelID
-            }
-            if (changed) {
-                saveSessionState(state, logger).catch(() => {})
-            }
-        }
-
-        const effectivePermission = compressPermission(state, config)
-
-        if (effectivePermission === "deny") {
-            return
-        }
-
-        prompts.reload()
-        const runtimePrompts = prompts.getRuntimePrompts()
-        const newPrompt = renderSystemPrompt(
-            runtimePrompts,
-            buildProtectedToolsExtension(config.compress.protectedTools),
-            state.isSubAgent && config.allowSubAgents,
-        )
-        if (output.system.length > 0) {
-            output.system[output.system.length - 1] += "\n\n" + newPrompt
-        } else {
-            output.system.push(newPrompt)
-        }
-    }
-}
-
 export function createChatMessageTransformHandler(
     client: any,
     registry: SessionStateRegistry,
@@ -207,7 +106,7 @@ export function createChatMessageTransformHandler(
             // so interleaved sessions no longer reset each other's modelContextLimit.
             state = await registry.getOrCreate(
                 client,
-                lastUserMessage.info.sessionID,
+                lastUserMessage.info.sessionID ?? "",
                 messages,
                 config,
             )
@@ -473,157 +372,53 @@ function buildHelpText(): string {
     ].join("\n")
 }
 
-export function createCommandExecuteHandler(
+export function createCommandHandler(
     client: any,
     registry: SessionStateRegistry,
     logger: Logger,
     config: PluginConfig,
     workingDirectory: string,
-    hostPermissions: HostPermissionSnapshot,
 ) {
-    return async (
-        input: { command: string; sessionID: string; arguments: string },
-        output: { parts: any[] },
-    ) => {
+    return async (input: { sessionID: string; text: string }): Promise<void> => {
         if (!config.commands.enabled) {
             return
         }
 
-        if (input.command === "acp" || input.command === "dcp") {
-            const messagesResponse = await client.session.messages({
-                path: { id: input.sessionID },
-            })
-            const messages = filterMessages(messagesResponse.data || messagesResponse)
+        const messagesResponse = await client.session.messages({
+            path: { id: input.sessionID },
+        })
+        const messages = filterMessages(messagesResponse.data || messagesResponse)
 
-            const state = await registry.getOrCreate(client, input.sessionID, messages, config)
+        const state = await registry.getOrCreate(client, input.sessionID, messages, config)
 
-            syncCompressPermissionState(state, config, hostPermissions, messages)
-
-            const commandCtx = {
-                client,
-                state,
-                config,
-                logger,
-                sessionId: input.sessionID,
-                messages,
-                workingDirectory,
-            }
-
-            const sub = input.arguments?.trim().toLowerCase()
-            if (sub === "stats" || sub === "status" || sub === "") {
-                await handleStatsCommand(commandCtx)
-                return
-            }
-
-            if (sub === "export" || sub.startsWith("export ")) {
-                const exportArgs = input.arguments?.trim().slice("export".length).trim() || ""
-                await handleExportCommand(commandCtx, exportArgs)
-                throw new Error("__DCP_CONTEXT_HANDLED__")
-            }
-
-            if (sub === "help") {
-                await sendIgnoredMessage(client, input.sessionID, buildHelpText(), {}, logger)
-                throw new Error("__DCP_CONTEXT_HANDLED__")
-            }
-
-            await handleContextCommand(commandCtx)
+        const commandCtx = {
+            client,
+            state,
+            config,
+            logger,
+            sessionId: input.sessionID,
+            messages,
+            workingDirectory,
         }
-    }
-}
 
-export function createTextCompleteHandler() {
-    return async (
-        _input: { sessionID: string; messageID: string; partID: string },
-        output: { text: string },
-    ) => {
-        output.text = stripHallucinationsFromString(output.text)
-    }
-}
-
-export function createEventHandler(registry: SessionStateRegistry, logger: Logger) {
-    return async (input: { event: any }) => {
-        const eventTime =
-            typeof input.event?.time === "number" && Number.isFinite(input.event.time)
-                ? input.event.time
-                : typeof input.event?.properties?.time === "number" &&
-                    Number.isFinite(input.event.properties.time)
-                  ? input.event.properties.time
-                  : undefined
-
-        if (input.event.type !== "message.part.updated") {
+        const raw = input.text ?? ""
+        const sub = raw.trim().toLowerCase()
+        if (sub === "stats" || sub === "status" || sub === "") {
+            await handleStatsCommand(commandCtx)
             return
         }
 
-        const part = input.event.properties?.part
-        if (part?.type !== "tool" || part.tool !== "compress") {
+        if (sub === "export" || sub.startsWith("export ")) {
+            const exportArgs = raw.trim().slice("export".length).trim() || ""
+            await handleExportCommand(commandCtx, exportArgs)
             return
         }
 
-        // [FIX #33] The event hook carries no sessionID. compressionTiming is
-        // shared on the registry so record/consume use one map (a per-session map
-        // would let the destructive consume delete the start in the wrong
-        // session). The apply step iterates sessions; only the owner matches.
-        const timing = registry.compressionTiming
-
-        if (part.state.status === "pending") {
-            if (typeof part.callID !== "string" || typeof part.messageID !== "string") {
-                return
-            }
-
-            const startedAt = eventTime ?? Date.now()
-            const key = buildCompressionTimingKey(part.messageID, part.callID)
-            if (timing.startsByCallId.has(key)) {
-                return
-            }
-            timing.startsByCallId.set(key, startedAt)
-            logger.debug("Recorded compression start", {
-                messageID: part.messageID,
-                callID: part.callID,
-                startedAt,
-            })
+        if (sub === "help") {
+            await sendIgnoredMessage(client, input.sessionID, buildHelpText(), {}, logger)
             return
         }
 
-        if (part.state.status === "completed") {
-            if (typeof part.callID !== "string" || typeof part.messageID !== "string") {
-                return
-            }
-
-            const key = buildCompressionTimingKey(part.messageID, part.callID)
-            const start = timing.startsByCallId.get(key)
-            timing.startsByCallId.delete(key)
-            const durationMs = resolveCompressionDuration(start, eventTime, part.state.time)
-            if (typeof durationMs !== "number") {
-                return
-            }
-
-            timing.pendingByCallId.set(key, {
-                messageId: part.messageID,
-                callId: part.callID,
-                durationMs,
-            })
-
-            for (const state of registry.all()) {
-                const updates = applyPendingCompressionDurations(state)
-                if (updates > 0) {
-                    await saveSessionState(state, logger)
-                    logger.info("Attached compression time to blocks", {
-                        messageID: part.messageID,
-                        callID: part.callID,
-                        blocks: updates,
-                        durationMs,
-                    })
-                }
-            }
-            return
-        }
-
-        if (part.state.status === "running") {
-            return
-        }
-
-        if (typeof part.callID === "string" && typeof part.messageID === "string") {
-            timing.startsByCallId.delete(buildCompressionTimingKey(part.messageID, part.callID))
-        }
+        await handleContextCommand(commandCtx)
     }
 }

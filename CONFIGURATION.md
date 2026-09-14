@@ -97,8 +97,10 @@ Status legend: **ACTIVE** = currently used | **DEPRECATED** = kept for backward 
 - **Default:** `"toast"`
 - **Status:** ACTIVE
 - **Description:** Delivery method for compression notifications.
-    - `"toast"` — Transient toast popup (recommended; non-blocking)
+    - `"toast"` — Transient popup (recommended; non-blocking)
     - `"chat"` — Inject as a chat message (may freeze session on providers that reject empty messages)
+
+    > **OpenCode 2.0:** the V2 plugin API has no server-side toast/notification channel. ACP writes both notification types into the session transcript as an ACP output entry instead — visible in the TUI, but stripped from the model-visible context. `"chat"` no longer produces a model-visible message.
 
 #### `protectedFilePatterns`
 
@@ -163,8 +165,8 @@ Core compression behavior.
 - **Status:** ACTIVE
 - **Description:** Permission level for the `compress` tool.
     - `"allow"` — Auto-approve compression calls
-    - `"ask"` — Prompt user before each compression
-    - `"deny"` — Block all compression calls
+    - `"ask"` — Prompt user before each compression (OpenCode 1.x only; the V2 plugin API has no mid-execution permission prompt, so ACP treats it as `"allow"` and logs a warning at startup)
+    - `"deny"` — Block all compression calls (tools are not registered; on V2 you can also hide them with a permission rule `{"action":"compress","resource":"*","effect":"deny"}`)
 
 #### `compress.showCompression`
 

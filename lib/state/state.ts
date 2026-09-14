@@ -243,6 +243,8 @@ export function createSessionState(): SessionState {
         modelID: undefined,
         systemPromptTokens: undefined,
         storageDir: undefined,
+        hiddenMessageIds: new Set<string>(),
+        lastUsedTokens: undefined,
         qualityGateRetryPending: false,
         noContextLimitWarned: false,
     }
@@ -287,6 +289,8 @@ export function resetSessionState(state: SessionState): void {
     state.modelID = undefined
     state.systemPromptTokens = undefined
     state.storageDir = undefined
+    state.hiddenMessageIds = new Set<string>()
+    state.lastUsedTokens = undefined
     state.qualityGateRetryPending = false
     state.noContextLimitWarned = false
 }
@@ -451,6 +455,11 @@ export async function ensureSessionInitialized(
         state.modelID = persisted.modelID
     }
 
+    state.hiddenMessageIds = new Set<string>(persisted.hiddenMessageIds ?? [])
+    state.lastUsedTokens =
+        typeof persisted.lastUsedTokens === "number" && persisted.lastUsedTokens > 0
+            ? persisted.lastUsedTokens
+            : undefined
     const applied = applyPendingCompressionDurations(state)
     if (applied > 0) {
         await saveSessionState(state, logger)

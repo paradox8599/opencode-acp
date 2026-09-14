@@ -10,7 +10,7 @@
             "subagent_turns": [
                 {
                     "respond": "tool",
-                    "tool": "bash",
+                    "tool": "shell",
                     "toolArgs": {
                         "command": "echo 'Authentication methods include passwords biometrics twoFactor certificates. Web apps use session tokens or JWT. File: src/auth/login.ts handles password verification, src/auth/jwt.ts implements token signing.'",
                         "description": "List authentication methods"
@@ -18,7 +18,7 @@
                 },
                 {
                     "respond": "tool",
-                    "tool": "bash",
+                    "tool": "shell",
                     "toolArgs": {
                         "command": "echo 'JWT encodes user claims signs with secret key. Three parts: header payload signature. Client sends via Authorization header. Server verifies signature. Key file: src/auth/jwt.ts verifyToken function at line 78.'",
                         "description": "Describe JWT implementation"
@@ -26,7 +26,7 @@
                 },
                 {
                     "respond": "tool",
-                    "tool": "bash",
+                    "tool": "shell",
                     "toolArgs": {
                         "command": "echo 'Security considerations: rateLimiting against brute force, sessionFixation prevention, httpOnly cookies for token storage, csrf protection, https mandatory, sqlInjection prevention. Rate limiter at src/middleware/auth.ts line 30.'",
                         "description": "List security considerations"

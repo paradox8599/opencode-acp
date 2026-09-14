@@ -1,5 +1,5 @@
 import { SessionState, WithParts } from "../state"
-import type { AssistantMessage } from "@opencode-ai/sdk/v2"
+import type { AcpMessageInfo } from "../state"
 import type { PluginConfig } from "../config"
 import { Logger } from "../logger"
 import {
@@ -76,7 +76,7 @@ export function estimateWireTokens(state: SessionState, messages: WithParts[]): 
         let baseAssistant = -1
         for (let i = messages.length - 1; i >= 0; i--) {
             if (messages[i].info.role !== "assistant") continue
-            const tokens = (messages[i].info as AssistantMessage).tokens
+            const tokens = (messages[i].info as AcpMessageInfo).tokens
             if ((tokens?.input || 0) <= 0 && (tokens?.output || 0) <= 0) continue
             baseAssistant = i
             break
@@ -166,7 +166,7 @@ export function enforceContextBudget(
             if (part?.type !== "tool") continue
             if (part.state?.status !== "completed") continue
             if (part.tool === "compress") continue
-            if (protectedTools.has(part.tool)) continue
+            if (part.tool !== undefined && protectedTools.has(part.tool)) continue
 
             const content = extractCompletedToolOutput(part)
             if (content === undefined) continue

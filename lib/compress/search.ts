@@ -1,4 +1,4 @@
-import { tool } from "@opencode-ai/plugin"
+import { tool } from "../v2/tool"
 import type { SessionState, WithParts } from "../state"
 import { formatBlockRef, formatMessageRef, parseBoundaryId, parseMessageRef } from "../message-ids"
 import { isIgnoredUserMessage } from "../messages/query"

@@ -42,7 +42,7 @@ jobs:
             - run: npm ci
             - run: npm run build
             - uses: oven-sh/setup-bun@v2
-            - run: npm install -g opencode-stable
+            - run: npm install -g @opencode/cli@2.0.3
             - name: Run E2E scenarios
               run: |
                   SKIP_BUILD=1 ./scripts/e2e/run-e2e.sh \

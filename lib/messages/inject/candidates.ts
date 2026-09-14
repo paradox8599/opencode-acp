@@ -71,7 +71,7 @@ interface CandidateDraft {
 function partToolNames(message: WithParts): string[] {
     const names = new Set<string>()
     for (const part of message.parts ?? []) {
-        if (part.type === "tool" && part.tool !== "compress") {
+        if (part.type === "tool" && part.tool !== undefined && part.tool !== "compress") {
             names.add(part.tool)
         }
     }

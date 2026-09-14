@@ -12,8 +12,8 @@ export function stripStaleMetadata(messages: WithParts[]): void {
         return
     }
 
-    const modelID = lastUserMessage.info.model.modelID
-    const providerID = lastUserMessage.info.model.providerID
+    const modelID = lastUserMessage.info.model?.modelID
+    const providerID = lastUserMessage.info.model?.providerID
 
     messages.forEach((message) => {
         if (message.info.role !== "assistant") {
@@ -94,7 +94,7 @@ export function dropCompressReasoning(messages: WithParts[], threshold: number):
             if (part.type === "tool" && part.tool === "compress") {
                 hasCompressTool = true
             } else if (part.type === "reasoning") {
-                reasoningLength += part.text.length
+                reasoningLength += (part.text ?? "").length
             }
         }
 

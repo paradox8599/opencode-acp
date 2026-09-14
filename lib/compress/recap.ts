@@ -1,4 +1,4 @@
-import { tool } from "@opencode-ai/plugin"
+import { tool } from "../v2/tool"
 import type { CompressionBlock } from "../state/types"
 import { type ToolFactoryContext, resolveToolContext } from "./types"
 

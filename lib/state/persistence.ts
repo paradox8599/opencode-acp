@@ -61,6 +61,8 @@ export interface PersistedSessionState {
     modelContextLimit?: number
     modelProviderID?: string
     modelID?: string
+    hiddenMessageIds?: string[]
+    lastUsedTokens?: number
 }
 
 /** Default storage directory: $XDG_DATA_HOME/opencode/storage/plugin/acp */
@@ -203,6 +205,8 @@ export function saveSessionState(
         modelContextLimit: sessionState.modelContextLimit,
         modelProviderID: sessionState.modelProviderID,
         modelID: sessionState.modelID,
+        hiddenMessageIds: Array.from(sessionState.hiddenMessageIds ?? []),
+        lastUsedTokens: sessionState.lastUsedTokens,
     }
 
     const key = saveQueueKey(sessionState.sessionId, sessionState.storageDir)

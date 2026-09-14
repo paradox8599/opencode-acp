@@ -1,5 +1,4 @@
-import type { Part } from "@opencode-ai/sdk/v2"
-import type { CompressionBlock, SessionState, WithParts } from "../state"
+import type { CompressionBlock, SessionState, WithParts, AcpPart } from "../state"
 import { hasMeaningfulContent } from "./parts"
 
 const KEEP_LAST_ORPHANED = 2
@@ -24,7 +23,7 @@ function rangeKey(startId: string, endId: string): string {
  * filterable batch, or matching missed — in which case the part is left intact
  * rather than risk dropping a live summary). Never mutates the original part.
  */
-function rewriteCompressInput(part: Part, liveKeys: Set<string>): Part | null {
+function rewriteCompressInput(part: AcpPart, liveKeys: Set<string>): AcpPart | null {
     if (part.type !== "tool") return null
     const state = part.state
     const input = state?.input
@@ -106,7 +105,7 @@ export function hideConsumedCompressCalls(state: SessionState, messages: WithPar
         const msg = messages[i]!
         const parts = Array.isArray(msg.parts) ? msg.parts : []
         let changed = false
-        const remaining: Part[] = []
+        const remaining: AcpPart[] = []
         for (const p of parts) {
             if (p.type === "tool" && p.tool === "compress") {
                 if (!p.callID || !keepCallIds.has(p.callID)) {

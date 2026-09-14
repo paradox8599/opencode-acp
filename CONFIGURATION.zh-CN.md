@@ -100,6 +100,8 @@ ACP 从最多三层配置文件中读取（后加载的覆盖先加载的）：
     - `"toast"` — 瞬时弹窗提示（推荐；非阻塞）
     - `"chat"` — 注入为聊天消息（部分 provider 拒绝空消息时可能冻结会话）
 
+    > **OpenCode 2.0：** V2 插件 API 没有 server 端 toast/通知通道。ACP 会把两种类型的通知都写入会话记录（TUI 可见），但在模型请求中剥离，不进入上下文。`"chat"` 不再产生模型可见消息。
+
 #### `protectedFilePatterns`
 
 - **类型：** `string[]`

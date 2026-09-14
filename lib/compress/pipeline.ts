@@ -8,7 +8,7 @@ import { sendCompressNotification } from "../ui/notification"
 import type { ToolContext } from "./types"
 import { buildSearchContext, fetchSessionMessages } from "./search"
 import type { SearchContext } from "./types"
-import { applyPendingCompressionDurations } from "./timing"
+import { applyPendingCompressionDurations, recordCompressionDuration } from "./timing"
 import { evaluateBatchQuality } from "./quality-gate"
 
 export interface CompressionSnapshot {
@@ -37,6 +37,12 @@ interface RunContext {
     }): Promise<void>
     metadata(input: { title: string }): void
     sessionID: string
+    /** Durable id of the assistant message carrying the call (V2 tool context). */
+    messageID?: string
+    /** Invocation id of the tool call (V2 tool context). */
+    callID?: string
+    /** Stamp set by prepareSession; consumed by finalizeSession for timing. */
+    startedAt?: number
 }
 
 export interface NotificationEntry {
@@ -64,6 +70,7 @@ export async function prepareSession(
     })
 
     toolCtx.metadata({ title })
+    toolCtx.startedAt = Date.now()
 
     const rawMessages = await fetchSessionMessages(ctx.client, toolCtx.sessionID)
 
@@ -91,6 +98,14 @@ export async function finalizeSession(
     entries: NotificationEntry[],
     batchTopic: string | undefined,
 ): Promise<void> {
+    if (toolCtx.messageID && toolCtx.callID && typeof toolCtx.startedAt === "number") {
+        recordCompressionDuration(
+            ctx.state,
+            toolCtx.messageID,
+            toolCtx.callID,
+            Date.now() - toolCtx.startedAt,
+        )
+    }
     applyPendingCompressionDurations(ctx.state)
     await saveSessionState(ctx.state, ctx.logger)
 

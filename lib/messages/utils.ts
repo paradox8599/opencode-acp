@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import type { SessionState, WithParts } from "../state"
 import { isMessageCompacted } from "../state/utils"
-import type { AssistantMessage, Message, UserMessage } from "@opencode-ai/sdk/v2"
+import type { AcpMessageInfo } from "../state"
 
 const SUMMARY_ID_HASH_LENGTH = 16
 
@@ -42,8 +42,8 @@ export const createSyntheticMessage = (
     if (role === "assistant") {
         const isAssistant = baseInfo.role === "assistant"
         const assistantBase = isAssistant ? baseInfo : undefined
-        const userModel = !isAssistant ? (baseInfo as UserMessage).model : undefined
-        const info: AssistantMessage = {
+        const userModel = !isAssistant ? (baseInfo as AcpMessageInfo).model : undefined
+        const info: AcpMessageInfo = {
             id: messageId,
             sessionID: baseInfo.sessionID,
             role: "assistant",
@@ -60,8 +60,8 @@ export const createSyntheticMessage = (
         return { info, parts }
     }
 
-    const userInfo = baseInfo as UserMessage
-    const info: UserMessage = {
+    const userInfo = baseInfo as AcpMessageInfo
+    const info: AcpMessageInfo = {
         id: messageId,
         sessionID: userInfo.sessionID,
         role: "user",
@@ -83,7 +83,7 @@ export const createSyntheticTextPart = (
     content: string,
     stableSeed?: string,
 ) => {
-    const userInfo = baseMessage.info as UserMessage
+    const userInfo = baseMessage.info as AcpMessageInfo
     const deterministicSeed = stableSeed?.trim() || userInfo.id
     const partId = generateStableId("prt_dcp_text", deterministicSeed)
 
@@ -97,8 +97,8 @@ export const createSyntheticTextPart = (
 }
 
 type MessagePart = WithParts["parts"][number]
-type ToolPart = Extract<MessagePart, { type: "tool" }>
-type TextPart = Extract<MessagePart, { type: "text" }>
+type ToolPart = MessagePart
+type TextPart = MessagePart
 
 export const appendToLastTextPart = (message: WithParts, injection: string): boolean => {
     const textPart = findLastTextPart(message)

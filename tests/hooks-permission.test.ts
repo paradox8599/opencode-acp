@@ -2,12 +2,8 @@ import "./test-env"
 import assert from "node:assert/strict"
 import test from "node:test"
 import type { PluginConfig } from "../lib/config"
-import {
-    createChatMessageTransformHandler,
-    createCommandExecuteHandler,
-    createEventHandler,
-    createTextCompleteHandler,
-} from "../lib/hooks"
+import { createChatMessageTransformHandler, createCommandHandler } from "../lib/hooks"
+import { applyPendingCompressionDurations, recordCompressionDuration } from "../lib/compress/timing"
 import { Logger } from "../lib/logger"
 import {
     createSessionState,
@@ -142,10 +138,9 @@ test("chat message transform drops messages without info instead of crashing", a
     assert.equal(output.messages.length, 0)
 })
 
-test("command execute works even when effective permission resolves to deny (informational commands)", async () => {
+test("command handler runs informational commands even when compress is denied", async () => {
     let sessionMessagesCalls = 0
-    const output = { parts: [] as any[] }
-    const handler = createCommandExecuteHandler(
+    const handler = createCommandHandler(
         {
             session: {
                 messages: async () => {
@@ -158,23 +153,17 @@ test("command execute works even when effective permission resolves to deny (inf
         new Logger(false),
         buildConfig("deny"),
         "/tmp",
-        { global: undefined, agents: {} },
     )
 
-    // /acp (no args) now shows compression status — works regardless of compress permission
-    try {
-        await handler({ command: "dcp", sessionID: "session-1", arguments: "" }, output)
-    } catch (e: any) {
-        if (e?.message !== "__DCP_CONTEXT_HANDLED__") throw e
-    }
+    // /acp (no args) shows compression status — works regardless of permission
+    await handler({ sessionID: "session-1", text: "" })
 
     assert.equal(sessionMessagesCalls, 1)
 })
 
-test("command execute returns normally (no __DCP_CONTEXT_HANDLED__ throw) — issue #296", async () => {
+test("command handler returns normally for the context subcommand", async () => {
     let sessionMessagesCalls = 0
-    const output = { parts: [] as any[] }
-    const handler = createCommandExecuteHandler(
+    const handler = createCommandHandler(
         {
             session: {
                 messages: async () => {
@@ -187,533 +176,61 @@ test("command execute returns normally (no __DCP_CONTEXT_HANDLED__ throw) — is
         new Logger(false),
         buildConfig("allow"),
         "/tmp",
-        { global: undefined, agents: {} },
     )
 
-    await handler({ command: "acp", sessionID: "session-1", arguments: "context" }, output)
+    await handler({ sessionID: "session-1", text: "context" })
 
     assert.equal(sessionMessagesCalls, 1)
 })
 
-test("text complete strips hallucinated metadata tags", async () => {
-    const output = { text: "alpha  omega" }
-    const handler = createTextCompleteHandler()
-
-    await handler({ sessionID: "session-1", messageID: "message-1", partID: "part-1" }, output)
-
-    assert.equal(output.text, "alpha  omega")
-})
-
-test("event hook attaches durations to matching blocks by message and call id", async () => {
-    const state = createSessionState()
-    state.sessionId = "session-1"
-    const handler = createEventHandler(createTestRegistry(state), new Logger(false))
-    const originalNow = Date.now
-    Date.now = () => 100
-
-    try {
-        await handler({
-            event: {
-                type: "message.part.updated",
-                properties: {
-                    part: {
-                        type: "tool",
-                        tool: "compress",
-                        callID: "call-1",
-                        messageID: "message-1",
-                        sessionID: "session-1",
-                        state: {
-                            status: "pending",
-                            input: {},
-                            raw: "",
-                        },
-                    },
-                },
-            },
-        })
-
-        await handler({
-            event: {
-                type: "message.part.updated",
-                properties: {
-                    part: {
-                        type: "tool",
-                        tool: "compress",
-                        callID: "call-2",
-                        messageID: "message-1",
-                        sessionID: "session-1",
-                        state: {
-                            status: "pending",
-                            input: {},
-                            raw: "",
-                        },
-                    },
-                },
-            },
-        })
-
-        await handler({
-            event: {
-                type: "message.part.updated",
-                properties: {
-                    part: {
-                        type: "tool",
-                        tool: "compress",
-                        callID: "call-1",
-                        messageID: "message-1",
-                        sessionID: "session-1",
-                        state: {
-                            status: "running",
-                            input: {},
-                            time: { start: 325 },
-                        },
-                    },
-                },
-            },
-        })
-
-        await handler({
-            event: {
-                type: "message.part.updated",
-                properties: {
-                    part: {
-                        type: "tool",
-                        tool: "compress",
-                        callID: "call-2",
-                        messageID: "message-1",
-                        sessionID: "session-1",
-                        state: {
-                            status: "running",
-                            input: {},
-                            time: { start: 410 },
-                        },
-                    },
-                },
-            },
-        })
-        state.prune.messages.blocksById.set(1, {
-            blockId: 1,
-            runId: 1,
-            active: true,
-            deactivatedByUser: false,
-            compressedTokens: 0,
-            summaryTokens: 0,
-            durationMs: 0,
-            mode: "message",
-            topic: "one",
-            batchTopic: "one",
-            startId: "m00001",
-            endId: "m00001",
-            anchorMessageId: "msg-a",
-            compressMessageId: "message-1",
-            compressCallId: "call-1",
-            includedBlockIds: [],
-            consumedBlockIds: [],
-            parentBlockIds: [],
-            directMessageIds: [],
-            directToolIds: [],
-            effectiveMessageIds: ["msg-a"],
-            effectiveToolIds: [],
-            createdAt: 1,
-            summary: "a",
-        })
-        state.prune.messages.blocksById.set(2, {
-            blockId: 2,
-            runId: 2,
-            active: true,
-            deactivatedByUser: false,
-            compressedTokens: 0,
-            summaryTokens: 0,
-            durationMs: 0,
-            mode: "message",
-            topic: "two",
-            batchTopic: "two",
-            startId: "m00002",
-            endId: "m00002",
-            anchorMessageId: "msg-b",
-            compressMessageId: "message-1",
-            compressCallId: "call-2",
-            includedBlockIds: [],
-            consumedBlockIds: [],
-            parentBlockIds: [],
-            directMessageIds: [],
-            directToolIds: [],
-            effectiveMessageIds: ["msg-b"],
-            effectiveToolIds: [],
-            createdAt: 2,
-            summary: "b",
-        })
-
-        await handler({
-            event: {
-                type: "message.part.updated",
-                properties: {
-                    part: {
-                        type: "tool",
-                        tool: "compress",
-                        callID: "call-2",
-                        messageID: "message-1",
-                        sessionID: "session-1",
-                        state: {
-                            status: "completed",
-                            input: {},
-                            output: "done",
-                            title: "",
-                            metadata: {},
-                            time: { start: 410, end: 500 },
-                        },
-                    },
-                },
-            },
-        })
-
-        await handler({
-            event: {
-                type: "message.part.updated",
-                properties: {
-                    part: {
-                        type: "tool",
-                        tool: "compress",
-                        callID: "call-1",
-                        messageID: "message-1",
-                        sessionID: "session-1",
-                        state: {
-                            status: "completed",
-                            input: {},
-                            output: "done",
-                            title: "",
-                            metadata: {},
-                            time: { start: 325, end: 500 },
-                        },
-                    },
-                },
-            },
-        })
-    } finally {
-        Date.now = originalNow
-    }
-
-    assert.equal(state.prune.messages.blocksById.get(1)?.durationMs, 225)
-    assert.equal(state.prune.messages.blocksById.get(2)?.durationMs, 310)
-})
-
-test("event hook falls back to completed runtime when running duration missing", async () => {
-    const state = createSessionState()
-    state.sessionId = "session-1"
-    const handler = createEventHandler(createTestRegistry(state), new Logger(false))
-
-    state.prune.messages.blocksById.set(1, {
-        blockId: 1,
-        runId: 1,
+function makeBlock(blockId: number, messageId: string, callId: string) {
+    return {
+        blockId,
+        runId: blockId,
         active: true,
         deactivatedByUser: false,
         compressedTokens: 0,
         summaryTokens: 0,
         durationMs: 0,
-        mode: "message",
-        topic: "one",
-        batchTopic: "one",
+        topic: "topic",
         startId: "m00001",
-        endId: "m00001",
-        anchorMessageId: "msg-a",
-        compressMessageId: "message-1",
-        compressCallId: "call-3",
-        includedBlockIds: [],
-        consumedBlockIds: [],
-        parentBlockIds: [],
-        directMessageIds: [],
-        directToolIds: [],
-        effectiveMessageIds: ["msg-a"],
-        effectiveToolIds: [],
-        createdAt: 1,
-        summary: "a",
-    })
-
-    await handler({
-        event: {
-            type: "message.part.updated",
-            properties: {
-                part: {
-                    type: "tool",
-                    tool: "compress",
-                    callID: "call-3",
-                    messageID: "message-1",
-                    sessionID: "session-1",
-                    state: {
-                        status: "completed",
-                        input: {},
-                        output: "done",
-                        title: "",
-                        metadata: {},
-                        time: { start: 500, end: 940 },
-                    },
-                },
-            },
-        },
-    })
-
-    assert.equal(state.prune.messages.blocksById.get(1)?.durationMs, 440)
-})
-
-test("event hook queues duration updates until the matching session is loaded", async () => {
-    const logger = new Logger(false)
-    const targetSessionId = `session-target-${process.pid}-${Date.now()}`
-    const otherSessionId = `session-other-${process.pid}-${Date.now()}`
-    const persistedState = createSessionState()
-    persistedState.sessionId = targetSessionId
-    persistedState.prune.messages.blocksById.set(1, {
-        blockId: 1,
-        runId: 1,
-        active: true,
-        deactivatedByUser: false,
-        compressedTokens: 0,
-        summaryTokens: 0,
-        durationMs: 0,
-        mode: "message",
-        topic: "one",
-        batchTopic: "one",
-        startId: "m00001",
-        endId: "m00001",
-        anchorMessageId: "msg-a",
-        compressMessageId: "message-1",
-        compressCallId: "call-remote",
-        includedBlockIds: [],
-        consumedBlockIds: [],
-        parentBlockIds: [],
-        directMessageIds: [],
-        directToolIds: [],
-        effectiveMessageIds: ["msg-a"],
-        effectiveToolIds: [],
-        createdAt: 1,
-        summary: "a",
-    })
-    await saveSessionState(persistedState, logger)
-
-    const liveState = createSessionState()
-    liveState.sessionId = otherSessionId
-    const handler = createEventHandler(createTestRegistry(liveState), logger)
-
-    await handler({
-        event: {
-            type: "message.part.updated",
-            properties: {
-                sessionID: targetSessionId,
-                part: {
-                    type: "tool",
-                    tool: "compress",
-                    callID: "call-remote",
-                    messageID: "message-1",
-                    state: {
-                        status: "pending",
-                        input: {},
-                        raw: "",
-                    },
-                },
-            },
-            time: 100,
-        },
-    })
-
-    await handler({
-        event: {
-            type: "message.part.updated",
-            properties: {
-                sessionID: targetSessionId,
-                part: {
-                    type: "tool",
-                    tool: "compress",
-                    callID: "call-remote",
-                    messageID: "message-1",
-                    state: {
-                        status: "completed",
-                        input: {},
-                        output: "done",
-                        title: "",
-                        metadata: {},
-                        time: { start: 350, end: 500 },
-                    },
-                },
-            },
-        },
-    })
-
-    assert.equal(liveState.compressionTiming.pendingByCallId.has("message-1:call-remote"), true)
-    assert.equal(liveState.compressionTiming.startsByCallId.has("message-1:call-remote"), false)
-
-    await ensureSessionInitialized(
-        {
-            session: {
-                get: async () => ({ data: { parentID: null } }),
-            },
-        } as any,
-        liveState,
-        targetSessionId,
-        logger,
-        [
-            {
-                info: {
-                    id: "msg-user-1",
-                    role: "user",
-                    sessionID: targetSessionId,
-                    agent: "assistant",
-                    time: { created: 1 },
-                } as WithParts["info"],
-                parts: [],
-            },
-        ],
-        false,
-    )
-
-    assert.equal(liveState.prune.messages.blocksById.get(1)?.durationMs, 250)
-    assert.equal(liveState.compressionTiming.pendingByCallId.has("message-1:call-remote"), false)
-})
-
-test("event hook keeps same call id distinct across message ids", async () => {
-    const state = createSessionState()
-    state.sessionId = "session-1"
-    const handler = createEventHandler(createTestRegistry(state), new Logger(false))
-
-    state.prune.messages.blocksById.set(1, {
-        blockId: 1,
-        runId: 1,
-        active: true,
-        deactivatedByUser: false,
-        compressedTokens: 0,
-        summaryTokens: 0,
-        durationMs: 0,
-        mode: "message",
-        topic: "one",
-        batchTopic: "one",
-        startId: "m00001",
-        endId: "m00001",
-        anchorMessageId: "msg-a",
-        compressMessageId: "message-1",
-        compressCallId: "shared-call",
-        includedBlockIds: [],
-        consumedBlockIds: [],
-        parentBlockIds: [],
-        directMessageIds: [],
-        directToolIds: [],
-        effectiveMessageIds: ["msg-a"],
-        effectiveToolIds: [],
-        createdAt: 1,
-        summary: "a",
-    })
-    state.prune.messages.blocksById.set(2, {
-        blockId: 2,
-        runId: 2,
-        active: true,
-        deactivatedByUser: false,
-        compressedTokens: 0,
-        summaryTokens: 0,
-        durationMs: 0,
-        mode: "message",
-        topic: "two",
-        batchTopic: "two",
-        startId: "m00002",
         endId: "m00002",
-        anchorMessageId: "msg-b",
-        compressMessageId: "message-2",
-        compressCallId: "shared-call",
+        anchorMessageId: messageId,
+        compressMessageId: messageId,
+        compressCallId: callId,
         includedBlockIds: [],
         consumedBlockIds: [],
         parentBlockIds: [],
         directMessageIds: [],
         directToolIds: [],
-        effectiveMessageIds: ["msg-b"],
+        effectiveMessageIds: [],
         effectiveToolIds: [],
-        createdAt: 2,
-        summary: "b",
-    })
+        createdAt: 1,
+        summary: "",
+        survivedCount: 0,
+    }
+}
 
-    await handler({
-        event: {
-            type: "message.part.updated",
-            properties: {
-                part: {
-                    type: "tool",
-                    tool: "compress",
-                    callID: "shared-call",
-                    messageID: "message-1",
-                    sessionID: "session-1",
-                    state: {
-                        status: "pending",
-                        input: {},
-                        raw: "",
-                    },
-                },
-            },
-            time: 100,
-        },
-    })
+test("in-tool compression duration attaches to matching blocks by message and call id", () => {
+    const state = createSessionState()
+    state.prune.messages.blocksById.set(1, makeBlock(1, "message-1", "call-1"))
 
-    await handler({
-        event: {
-            type: "message.part.updated",
-            properties: {
-                part: {
-                    type: "tool",
-                    tool: "compress",
-                    callID: "shared-call",
-                    messageID: "message-2",
-                    sessionID: "session-1",
-                    state: {
-                        status: "pending",
-                        input: {},
-                        raw: "",
-                    },
-                },
-            },
-            time: 200,
-        },
-    })
+    recordCompressionDuration(state, "message-1", "call-1", 42)
+    const applied = applyPendingCompressionDurations(state)
 
-    await handler({
-        event: {
-            type: "message.part.updated",
-            properties: {
-                part: {
-                    type: "tool",
-                    tool: "compress",
-                    callID: "shared-call",
-                    messageID: "message-2",
-                    sessionID: "session-1",
-                    state: {
-                        status: "completed",
-                        input: {},
-                        output: "done",
-                        title: "",
-                        metadata: {},
-                        time: { start: 350, end: 500 },
-                    },
-                },
-            },
-        },
-    })
+    assert.equal(applied, 1)
+    assert.equal(state.prune.messages.blocksById.get(1)?.durationMs, 42)
+})
 
-    await handler({
-        event: {
-            type: "message.part.updated",
-            properties: {
-                part: {
-                    type: "tool",
-                    tool: "compress",
-                    callID: "shared-call",
-                    messageID: "message-1",
-                    sessionID: "session-1",
-                    state: {
-                        status: "completed",
-                        input: {},
-                        output: "done",
-                        title: "",
-                        metadata: {},
-                        time: { start: 450, end: 700 },
-                    },
-                },
-            },
-        },
-    })
+test("duration keys keep the same call id distinct across message ids", () => {
+    const state = createSessionState()
+    state.prune.messages.blocksById.set(1, makeBlock(1, "message-1", "call-1"))
+    state.prune.messages.blocksById.set(2, makeBlock(2, "message-2", "call-1"))
 
-    assert.equal(state.prune.messages.blocksById.get(1)?.durationMs, 350)
-    assert.equal(state.prune.messages.blocksById.get(2)?.durationMs, 150)
+    recordCompressionDuration(state, "message-1", "call-1", 10)
+    recordCompressionDuration(state, "message-2", "call-1", 20)
+    applyPendingCompressionDurations(state)
+
+    assert.equal(state.prune.messages.blocksById.get(1)?.durationMs, 10)
+    assert.equal(state.prune.messages.blocksById.get(2)?.durationMs, 20)
 })

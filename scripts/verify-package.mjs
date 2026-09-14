@@ -158,6 +158,17 @@ function packageLooksCommonJs(pkg) {
     if (!pkg) return false
     if (pkg.type === "commonjs") return true
 
+    // Dual packages expose an ESM entry through `module` or an
+    // `exports["."].import` condition. `require.resolve()` returns the CJS
+    // entry for those, which must not classify the whole package as CJS.
+    if (typeof pkg.module === "string" && pkg.module.length > 0) return false
+    const exportsField = pkg.exports
+    if (exportsField && typeof exportsField === "object") {
+        const root = exportsField["."] ?? exportsField
+        if (typeof root === "string" && (root.endsWith(".mjs") || root.endsWith(".js"))) return false
+        if (root && typeof root === "object" && typeof root.import === "string") return false
+    }
+
     const main = typeof pkg.main === "string" ? pkg.main : ""
     return /(?:^|\/)(cjs|umd)(?:\/|$)/.test(main) || main.endsWith(".cjs")
 }

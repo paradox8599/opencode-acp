@@ -334,6 +334,12 @@ async function handleChatCompletion(req: Request): Promise<Response> {
         return handleAutonomousNudgeStep(model, messages, step, isStream, inputTokens)
     }
 
+    if (step.respond === "tool") {
+        const toolName = step.tool ?? "shell"
+        log(`  → turn ${turnIdx + 1}: emitting ${toolName} tool call`)
+        return toolUseResponse(model, toolName, step.toolArgs ?? {}, isStream, inputTokens)
+    }
+
     // Text response
     const text = step.text ?? "(empty)"
     return textResponse(model, text, isStream, inputTokens)
@@ -420,9 +426,13 @@ function handleCompressStep(
 }
 
 function detectNudge(messages: any[]): boolean {
+    // Phrases rendered by the current ACP nudge templates
+    // (lib/prompts/*nudge.ts) plus the dynamic guidance suffix.
     const nudgePhrases = [
         "efficiency nudge to compress early",
-        "Context limit reached — compress now",
+        "Context limit reached",
+        "Context is getting full",
+        "iterating for a while",
         "since last nudge)",
     ]
     for (const msg of messages) {
@@ -562,7 +572,7 @@ function handleAutonomousNudgeStep(
     )
     return toolUseResponse(
         model,
-        "bash",
+        "shell",
         {
             command: `echo '${growthText.replace(/'/g, "'\\''")}'`,
             description: "Generate autonomous work output",
@@ -630,7 +640,7 @@ function handleChildRequest(
     }
 
     if (step.respond === "tool") {
-        const toolName = step.tool ?? "bash"
+        const toolName = step.tool ?? "shell"
         log(`  → [CHILD] emitting ${toolName} tool call`)
         return toolUseResponse(model, toolName, step.toolArgs ?? {}, isStream, inputTokens)
     }
@@ -644,14 +654,16 @@ function handleTaskStep(
     isStream: boolean,
     inputTokens: number,
 ): Response {
+    // OpenCode V2 names the subagent tool `subagent` and takes `agent`
+    // (V1 called it `task` with `subagent_type`).
     const args: Record<string, unknown> = {
         description: step.description ?? "E2E subagent task",
         prompt: step.prompt ?? "Complete the assigned task.",
-        subagent_type: step.subagent_type ?? "general",
+        agent: step.subagent_type ?? "general",
     }
 
-    log(`  → emitting task tool call (subagent_type=${args.subagent_type})`)
-    return toolUseResponse(model, "task", args, isStream, inputTokens)
+    log(`  → emitting subagent tool call (agent=${args.agent})`)
+    return toolUseResponse(model, "subagent", args, isStream, inputTokens)
 }
 
 /**
@@ -835,6 +847,11 @@ function toolUseResponse(
     isStream: boolean,
     inputTokens = 0,
 ): Response {
+    // V2 renamed `bash` to `shell` and dropped the `description` argument.
+    if (toolName === "shell" && "description" in args) {
+        const { description: _description, ...rest } = args
+        args = rest
+    }
     const argsJson = JSON.stringify(args)
     const callId = `call_${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`
     const outputTokens = Math.max(1, Math.ceil(argsJson.length / 4))

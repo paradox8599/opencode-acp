@@ -1,8 +1,7 @@
 import type { Logger } from "../../logger"
 import type { PluginConfig } from "../../config"
-import type { SessionState, WithParts } from "../../state/types"
+import type { SessionState, WithParts, AcpPart } from "../../state/types"
 import type { CompressionBlock } from "../../state/types"
-import type { Part } from "@opencode-ai/sdk/v2"
 import type {
     QualityGateContext,
     QualityGateResult,
@@ -16,7 +15,7 @@ const CHARS_PER_TOKEN_ESTIMATE = 4
 const TOOL_OUTPUT_MAX_CHARS = 1500
 const TOOL_INPUT_MAX_CHARS = 500
 
-function extractMessageText(parts: Part[] | undefined): string {
+function extractMessageText(parts: AcpPart[] | undefined): string {
     if (!parts || !Array.isArray(parts)) return ""
     let text = ""
     for (const part of parts) {
@@ -25,6 +24,7 @@ function extractMessageText(parts: Part[] | undefined): string {
             text += part.text + "\n"
         } else if (part.type === "tool") {
             const state = part.state
+            if (!state) continue
             const input = state.status === "completed" && typeof state.input === "object"
                 ? JSON.stringify(state.input).slice(0, TOOL_INPUT_MAX_CHARS)
                 : ""

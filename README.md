@@ -101,17 +101,17 @@ across all other sessions.
 
 ## Installation
 
+Requires **OpenCode 2.0 or newer** (`@opencode/cli` + `@opencode/plugin`). ACP 2.x uses the V2 plugin API only — on OpenCode 1.x stay on ACP 1.18.x.
+
 ```bash
-opencode plugin opencode-acp@stable --global
+opencode plugin add opencode-acp@stable
 ```
 
-Or add to your opencode config:
+Or add it to your opencode config:
 
-```json
+```jsonc
 {
-    "plugin": {
-        "opencode-acp": "stable"
-    }
+    "plugins": ["opencode-acp@stable"]
 }
 ```
 

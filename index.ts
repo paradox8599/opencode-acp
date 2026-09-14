@@ -1,233 +1,270 @@
 /** ACP version, injected at build time by tsup define */
 declare const ACP_VERSION: string | undefined
-import type { Plugin } from "@opencode-ai/plugin"
+import { Plugin } from "@opencode/plugin"
 import { getConfig } from "./lib/config"
 import {
-    createAcpStatusTool,
     createAcpContextRecapTool,
+    createAcpStatusTool,
     createCompressRangeTool,
     createDecompressTool,
     createSearchContextTool,
 } from "./lib/compress"
-import {
-    compressDisabledByOpencode,
-    hasExplicitToolPermission,
-    type HostPermissionSnapshot,
-} from "./lib/host-permissions"
 import { Logger } from "./lib/logger"
-import { SessionStateRegistry } from "./lib/state"
+import { SessionStateRegistry, saveSessionState } from "./lib/state"
 import { PromptStore } from "./lib/prompts/store"
-import {
-    createChatMessageTransformHandler,
-    createCommandExecuteHandler,
-    createEventHandler,
-    createSystemPromptHandler,
-    createTextCompleteHandler,
-} from "./lib/hooks"
-import { configureClientAuth, isSecureMode } from "./lib/auth"
+import { createCommandHandler } from "./lib/hooks"
 import { findBiliProxyProviders } from "./lib/bili-proxy"
 import { startAutoUpdate } from "./lib/update"
+import { createAcpHost } from "./lib/v2/host"
+import { createV2ContextHandler } from "./lib/v2/context-handler"
+import { toV2Tool } from "./lib/v2/tools"
 
-const server: Plugin = (async (ctx) => {
-    const config = getConfig(ctx)
+export default Plugin.define({
+    id: "opencode-acp",
 
-    if (!config.enabled) {
-        return {}
-    }
+    async setup(ctx) {
+        const directory = ctx.location.directory
+        const config = getConfig({
+            directory,
+            client: {
+                tui: {
+                    showToast: (input) => {
+                        const body = input.body ?? {}
+                        console.warn(`[opencode-acp] ${body.title ?? "Notice"}: ${body.message ?? ""}`)
+                    },
+                },
+            },
+        })
 
-    if (process.env.BILLION_CONTEXT_PROXY) {
-        console.log(
-            "[opencode-acp] disabled: BILLION_CONTEXT_PROXY detected — proxy handles compression",
-        )
-        return {}
-    }
+        if (!config.enabled) {
+            return
+        }
 
-    const logger = new Logger(config.debug, config.debug ? "debug" : config.logLevel)
-    logger.info("ACP plugin initialized", {
-        version: typeof ACP_VERSION !== "undefined" ? ACP_VERSION : "dev",
-        workspace: ctx.directory,
-        logLevel: logger.level,
-        debug: config.debug,
-        autoUpdate: config.autoUpdate,
-        secureMode: isSecureMode(),
-    })
-    const registry = new SessionStateRegistry(logger, ctx.directory)
-    const prompts = new PromptStore(
-        logger,
-        ctx.directory,
-        config.experimental.customPrompts,
-        config.compress.candidates === true,
-    )
-    const hostPermissions: HostPermissionSnapshot = {
-        global: undefined,
-        agents: {},
-    }
-
-    if (isSecureMode()) {
-        configureClientAuth(ctx.client)
-        // logger.info("Secure mode detected, configured client authentication")
-    }
-
-    // [FIX #312] Seed the model-limit catalog so the FIRST request after a
-    // model switch resolves the new model's context window (the per-request
-    // system.transform refresh only fills entries for models already used in
-    // this instance). Fire-and-forget — never blocks init; outcome is logged
-    // so a silent degrade (empty catalog / failed fetch) is debuggable. On
-    // failure the fallback is per-request refresh, the pre-fix behavior.
-    registry.hydrateModelLimitsFromClient(ctx.client).then(
-        (recorded) => {
-            if (recorded > 0) {
-                logger.info("Model limit catalog seeded from provider config", {
-                    models: recorded,
-                })
-            } else {
-                logger.warn(
-                    "Model limit catalog seeding recorded no entries — " +
-                        "falling back to per-request refresh (system.transform)",
-                )
-            }
-        },
-        (error) => {
-            logger.warn(
-                "Model limit catalog seeding failed — " +
-                    "falling back to per-request refresh (system.transform)",
-                { error: error instanceof Error ? error.message : String(error) },
+        if (process.env.BILLION_CONTEXT_PROXY) {
+            console.log(
+                "[opencode-acp] disabled: BILLION_CONTEXT_PROXY detected — proxy handles compression",
             )
-        },
-    )
+            return
+        }
 
-    logger.info("DCP initialized")
+        const logger = new Logger(config.debug, config.debug ? "debug" : config.logLevel)
+        logger.info("ACP plugin initialized", {
+            version: typeof ACP_VERSION !== "undefined" ? ACP_VERSION : "dev",
+            workspace: directory,
+            logLevel: logger.level,
+            debug: config.debug,
+            autoUpdate: config.autoUpdate,
+        })
 
-    startAutoUpdate(ctx, config.autoUpdate, logger)
+        const registry = new SessionStateRegistry(logger, directory)
+        const prompts = new PromptStore(
+            logger,
+            directory,
+            config.experimental.customPrompts,
+            config.compress.candidates === true,
+        )
 
-    const compressToolContext = {
-        client: ctx.client,
-        registry,
-        logger,
-        config,
-        prompts,
-    }
+        // Provider-reported usage feeds the nudge thresholds: V2 native
+        // messages carry no `tokens` field, so `session.usage.updated` is the
+        // only real prompt-size signal (system prompt + tools included).
+        const eventAbort = new AbortController()
+        void (async () => {
+            try {
+                for await (const event of ctx.event.subscribe({ signal: eventAbort.signal })) {
+                    if (event.type !== "session.usage.updated") continue
+                    const data = (event as { data?: unknown }).data
+                    if (!data || typeof data !== "object") continue
+                    const record = data as { sessionID?: unknown; tokens?: unknown }
+                    if (typeof record.sessionID !== "string") continue
+                    const tokens = record.tokens as
+                        | {
+                              input?: unknown
+                              output?: unknown
+                              reasoning?: unknown
+                              cache?: { read?: unknown; write?: unknown }
+                          }
+                        | undefined
+                    if (!tokens || typeof tokens !== "object") continue
+                    const total =
+                        numberOrZero(tokens.input) +
+                        numberOrZero(tokens.output) +
+                        numberOrZero(tokens.reasoning) +
+                        numberOrZero(tokens.cache?.read) +
+                        numberOrZero(tokens.cache?.write)
+                    if (total <= 0) continue
+                    const state = registry.get(record.sessionID)
+                    if (state) {
+                        state.lastUsedTokens = total
+                        // Persist so the next process (a fresh `run` server)
+                        // starts with the previous request's real usage.
+                        saveSessionState(state, logger).catch(() => {})
+                    }
+                }
+            } catch (error) {
+                if (!eventAbort.signal.aborted) {
+                    logger.warn("ACP event subscription ended", {
+                        error: error instanceof Error ? error.message : String(error),
+                    })
+                }
+            }
+        })()
 
-    // [FIX #337] Manual proxy mode: the bili proxy may be detected in a
-    // provider baseURL by the config hook (the BILLION_CONTEXT_PROXY env var
-    // is only set by the `bili <client>` launcher, not by manual proxy mode).
-    // When detected, every ACP hook becomes a no-op so the proxy handles
-    // compression alone. Assigned (not latched) so a config reload that
-    // removes the proxy restores ACP behavior.
-    let disabledByBiliProxy = false
-    const guard =
-        <TArgs extends unknown[]>(fn: (...args: TArgs) => Promise<void>) =>
-        (...args: TArgs): Promise<void> =>
-            disabledByBiliProxy ? Promise.resolve() : fn(...args)
+        // [FIX #337] Manual proxy mode: a provider baseURL routed through the
+        // bili proxy means the proxy handles context compression — ACP must
+        // stay fully off, mirroring the BILLION_CONTEXT_PROXY env guard.
+        const disabledByBiliProxy = await detectBiliProxy(ctx)
+        if (disabledByBiliProxy) {
+            console.log(
+                "[opencode-acp] disabled: /bili/ proxy detected in provider baseURL — proxy handles compression",
+            )
+            return
+        }
 
-    return {
-        "experimental.chat.system.transform": guard(
-            createSystemPromptHandler(registry, logger, config, prompts),
-        ),
-        "experimental.chat.messages.transform": guard(
-            createChatMessageTransformHandler(
-                ctx.client,
+        if (config.compress.permission === "ask") {
+            logger.warn(
+                'compress.permission "ask" is not supported by the OpenCode V2 plugin API (no mid-execution permission prompt); treating it as "allow". Use OpenCode permission rules with effect "deny" to disable compression.',
+            )
+        }
+
+        const host = createAcpHost(
+            ctx,
+            logger,
+            (sessionID, messageID) => {
+                const state = registry.get(sessionID)
+                if (!state) return
+                state.hiddenMessageIds.add(messageID)
+                // The write must outlive this process: a later request may run
+                // in a fresh server process that reloads state from disk.
+                saveSessionState(state, logger).catch(() => {})
+            },
+            (sessionID, messageID) =>
+                registry.get(sessionID)?.hiddenMessageIds.has(messageID) ?? false,
+        )
+
+        // Seed the model-limit catalog so the FIRST request after a model
+        // switch resolves the new model's context window. Fire-and-forget —
+        // outcome is logged so a silent degrade stays debuggable.
+        registry.hydrateModelLimitsFromClient(host.client).then(
+            (recorded) => {
+                if (recorded > 0) {
+                    logger.info("Model limit catalog seeded from provider catalog", {
+                        models: recorded,
+                    })
+                } else {
+                    logger.warn(
+                        "Model limit catalog seeding recorded no entries — " +
+                            "falling back to per-request refresh",
+                    )
+                }
+            },
+            (error) => {
+                logger.warn("Model limit catalog seeding failed", {
+                    error: error instanceof Error ? error.message : String(error),
+                })
+            },
+        )
+
+        const toolsEnabled = config.compress.permission !== "deny"
+
+        if (toolsEnabled) {
+            await ctx.session.hook(
+                "context",
+                createV2ContextHandler({
+                    client: host.client,
+                    registry,
+                    logger,
+                    config,
+                    prompts,
+                }),
+            )
+
+            const toolContext = {
+                client: host.client,
                 registry,
                 logger,
                 config,
                 prompts,
-                hostPermissions,
-            ),
-        ) as any,
-        "experimental.text.complete": guard(createTextCompleteHandler()),
-        "command.execute.before": guard(
-            createCommandExecuteHandler(
-                ctx.client,
+            }
+
+            await ctx.tool.transform((editor) => {
+                editor.add(toV2Tool("compress", createCompressRangeTool(toolContext)))
+                editor.add(toV2Tool("decompress", createDecompressTool(toolContext)))
+                editor.add(toV2Tool("search_context", createSearchContextTool(toolContext)))
+                editor.add(toV2Tool("acp_status", createAcpStatusTool(toolContext)))
+                editor.add(toV2Tool("acp_context_recap", createAcpContextRecapTool(toolContext)))
+            })
+        }
+
+        if (config.commands.enabled && toolsEnabled) {
+            const handleCommand = createCommandHandler(
+                host.client,
                 registry,
                 logger,
                 config,
-                ctx.directory,
-                hostPermissions,
-            ),
-        ),
-        event: guard(createEventHandler(registry, logger)),
-        tool: {
-            ...(config.compress.permission !== "deny" && {
-                compress: createCompressRangeTool(compressToolContext),
-                decompress: createDecompressTool(compressToolContext),
-                search_context: createSearchContextTool(compressToolContext),
-                acp_status: createAcpStatusTool(compressToolContext),
-                acp_context_recap: createAcpContextRecapTool(compressToolContext),
-            }),
-        },
-        config: async (opencodeConfig) => {
-            // [FIX #337] Manual proxy mode: a provider baseURL routed through
-            // the bili proxy (`/bili/` prefix) means the proxy handles context
-            // compression — ACP must stay fully off, mirroring the
-            // BILLION_CONTEXT_PROXY env-var guard. Denying the ACP tools
-            // removes them from the LLM tool list (verified against a live
-            // opencode instance), and the guard flag no-ops every hook.
-            const biliMatches = findBiliProxyProviders(opencodeConfig.provider)
-            disabledByBiliProxy = biliMatches.length > 0
-            if (biliMatches.length > 0) {
-                console.log(
-                    "[opencode-acp] disabled: /bili/ proxy detected in provider baseURL (" +
-                        biliMatches.map((m) => m.provider).join(", ") +
-                        ") — proxy handles compression",
-                )
-                const permission = opencodeConfig.permission ?? {}
-                opencodeConfig.permission = {
-                    ...permission,
-                    compress: "deny",
-                    decompress: "deny",
-                    search_context: "deny",
-                    acp_status: "deny",
-                    acp_context_recap: "deny",
-                } as typeof permission
-                return
-            }
-
-            if (
-                config.compress.permission !== "deny" &&
-                compressDisabledByOpencode(opencodeConfig.permission)
-            ) {
-                config.compress.permission = "deny"
-            }
-
-            if (config.commands.enabled && config.compress.permission !== "deny") {
-                opencodeConfig.command ??= {}
-                opencodeConfig.command["acp"] = {
-                    template: "",
-                    description: "Show available ACP commands",
-                }
-            }
-
-            const toolsToAdd: string[] = []
-            if (config.compress.permission !== "deny" && !config.allowSubAgents) {
-                toolsToAdd.push("compress", "decompress", "search_context", "acp_status")
-            }
-
-            if (toolsToAdd.length > 0) {
-                const existingPrimaryTools = opencodeConfig.experimental?.primary_tools ?? []
-                opencodeConfig.experimental = {
-                    ...opencodeConfig.experimental,
-                    primary_tools: [...existingPrimaryTools, ...toolsToAdd],
-                }
-            }
-
-            if (!hasExplicitToolPermission(opencodeConfig.permission, "compress")) {
-                const permission = opencodeConfig.permission ?? {}
-                opencodeConfig.permission = {
-                    ...permission,
-                    compress: config.compress.permission,
-                    acp_status: "allow",
-                } as typeof permission
-            }
-
-            hostPermissions.global = opencodeConfig.permission
-            hostPermissions.agents = Object.fromEntries(
-                Object.entries(opencodeConfig.agent ?? {}).map(([name, agent]) => [
-                    name,
-                    agent?.permission,
-                ]),
+                directory,
             )
-        },
-    }
-}) satisfies Plugin
+            const execute = async (input: {
+                sessionID: string
+                prompt: { text?: string }
+            }): Promise<void> => {
+                await handleCommand({
+                    sessionID: input.sessionID,
+                    text: input.prompt?.text ?? "",
+                })
+            }
 
-export default server
+            await ctx.command.transform((editor) => {
+                editor.add({
+                    name: "acp",
+                    description: "ACP context management (stats, context, export, help)",
+                    execute,
+                })
+                editor.add({
+                    name: "dcp",
+                    description: "ACP context management (backward-compatible alias)",
+                    execute,
+                })
+            })
+        }
+
+        startAutoUpdate(host.client, config.autoUpdate, logger)
+
+        logger.info("ACP initialized")
+        return () => {
+            eventAbort.abort()
+            logger.info("ACP plugin unloaded")
+        }
+    },
+})
+
+function numberOrZero(value: unknown): number {
+    return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+async function detectBiliProxy(ctx: {
+    catalog: { provider: { list(): Promise<unknown> } }
+}): Promise<boolean> {
+    try {
+        const payload = await ctx.catalog.provider.list()
+        const providers = Array.isArray(payload)
+            ? payload
+            : Array.isArray((payload as { data?: unknown })?.data)
+              ? ((payload as { data: unknown[] }).data ?? [])
+              : []
+        const shaped: Record<string, unknown> = {}
+        for (const provider of providers) {
+            if (!provider || typeof provider !== "object") continue
+            const record = provider as {
+                id?: unknown
+                settings?: Record<string, unknown>
+            }
+            if (typeof record.id !== "string") continue
+            shaped[record.id] = {
+                options: { baseURL: record.settings?.baseURL },
+            }
+        }
+        return findBiliProxyProviders(shaped).length > 0
+    } catch {
+        return false
+    }
+}

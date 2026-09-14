@@ -126,10 +126,10 @@ export async function appendProtectedTools(
         const parts = Array.isArray(message.parts) ? message.parts : []
         for (const part of parts) {
             if (part.type === "tool" && part.callID) {
-                let isToolProtected = isToolNameProtected(part.tool, protectedTools)
+                let isToolProtected = isToolNameProtected(part.tool ?? "", protectedTools)
 
                 if (!isToolProtected && protectedFilePatterns.length > 0) {
-                    const filePaths = getFilePathsFromParameters(part.tool, part.state?.input)
+                    const filePaths = getFilePathsFromParameters(part.tool ?? "", part.state?.input)
                     if (isFilePathProtected(filePaths, protectedFilePatterns)) {
                         isToolProtected = true
                     }
@@ -171,12 +171,12 @@ export function messageContainsProtectedTool(
     for (const part of parts) {
         if (part.type !== "tool" || !part.callID) continue
 
-        if (isToolNameProtected(part.tool, protectedTools)) {
+        if (isToolNameProtected(part.tool ?? "", protectedTools)) {
             return true
         }
 
         if (protectedFilePatterns.length > 0) {
-            const filePaths = getFilePathsFromParameters(part.tool, part.state?.input)
+            const filePaths = getFilePathsFromParameters(part.tool ?? "", part.state?.input)
             if (isFilePathProtected(filePaths, protectedFilePatterns)) {
                 return true
             }

@@ -47,7 +47,7 @@ import { formatTokenCount } from "../ui/utils"
 import { isIgnoredUserMessage } from "../messages/query"
 import { isMessageCompacted } from "../state/utils"
 import { countTokens, extractCompletedToolOutput, getCurrentParams } from "../token-utils"
-import type { AssistantMessage, TextPart, ToolPart } from "@opencode-ai/sdk/v2"
+import type { AcpMessageInfo, AcpPart } from "../state/types"
 
 export interface ContextCommandContext {
     client: any
@@ -84,14 +84,14 @@ function analyzeTokens(state: SessionState, messages: WithParts[]): TokenBreakdo
         total: 0,
     }
 
-    let firstAssistant: AssistantMessage | undefined
+    let firstAssistant: AcpMessageInfo | undefined
     for (const msg of messages) {
         if (msg.info.role === "assistant") {
-            const assistantInfo = msg.info as AssistantMessage
+            const assistantInfo = msg.info as AcpMessageInfo
             if (
-                assistantInfo.tokens?.input > 0 ||
-                assistantInfo.tokens?.cache?.read > 0 ||
-                assistantInfo.tokens?.cache?.write > 0
+                (assistantInfo.tokens?.input ?? 0) > 0 ||
+                (assistantInfo.tokens?.cache?.read ?? 0) > 0 ||
+                (assistantInfo.tokens?.cache?.write ?? 0) > 0
             ) {
                 firstAssistant = assistantInfo
                 break
@@ -99,12 +99,12 @@ function analyzeTokens(state: SessionState, messages: WithParts[]): TokenBreakdo
         }
     }
 
-    let lastAssistant: AssistantMessage | undefined
+    let lastAssistant: AcpMessageInfo | undefined
     for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i]
         if (msg.info.role === "assistant") {
-            const assistantInfo = msg.info as AssistantMessage
-            if (assistantInfo.tokens?.output > 0) {
+            const assistantInfo = msg.info as AcpMessageInfo
+            if ((assistantInfo.tokens?.output ?? 0) > 0) {
                 lastAssistant = assistantInfo
                 break
             }
@@ -138,7 +138,7 @@ function analyzeTokens(state: SessionState, messages: WithParts[]): TokenBreakdo
 
         for (const part of parts) {
             if (part.type === "tool") {
-                const toolPart = part as ToolPart
+                const toolPart = part as AcpPart
                 if (toolPart.callID) {
                     allToolIds.add(toolPart.callID)
                     if (!isCompacted) {
@@ -169,7 +169,7 @@ function analyzeTokens(state: SessionState, messages: WithParts[]): TokenBreakdo
                 !isCompacted &&
                 !isIgnoredUser
             ) {
-                const textPart = part as TextPart
+                const textPart = part as AcpPart
                 const text = textPart.text || ""
                 userTextParts.push(text)
                 if (!foundFirstUser) {

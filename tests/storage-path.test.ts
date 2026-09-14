@@ -6,7 +6,6 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync } from "fs"
 import { join } from "path"
 import { cwd } from "process"
 import { homedir, tmpdir } from "os"
-import type { PluginInput } from "@opencode-ai/plugin"
 import { Logger } from "../lib/logger"
 import { getConfig, type PluginConfig } from "../lib/config"
 import { validateConfigTypes } from "../lib/config-validation"
@@ -344,7 +343,7 @@ test("getConfig merges storagePath across global and project config layers", asy
         const fakeCtx = {
             directory: projectDir,
             client: { tui: { showToast: () => {} } },
-        } as unknown as PluginInput
+        } as Parameters<typeof getConfig>[0]
 
         // Global layer only
         let config = getConfig(fakeCtx)

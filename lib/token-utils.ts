@@ -1,5 +1,5 @@
 import { SessionState, WithParts } from "./state"
-import { AssistantMessage, UserMessage } from "@opencode-ai/sdk/v2"
+import type { AcpMessageInfo } from "./state/types"
 import { Logger } from "./logger"
 import * as _anthropicTokenizer from "@anthropic-ai/tokenizer"
 const anthropicCountTokens = (_anthropicTokenizer.countTokens ??
@@ -13,7 +13,7 @@ export function getCurrentTokenUsage(state: SessionState, messages: WithParts[])
             continue
         }
 
-        const assistantInfo = msg.info as AssistantMessage
+        const assistantInfo = msg.info as AcpMessageInfo
         const input = assistantInfo.tokens?.input || 0
         const output = assistantInfo.tokens?.output || 0
         const reasoning = assistantInfo.tokens?.reasoning || 0
@@ -44,6 +44,13 @@ export function getCurrentTokenUsage(state: SessionState, messages: WithParts[])
         return input + cacheRead + cacheWrite + output + reasoning
     }
 
+    // V2 native messages carry no `tokens` field. The latest
+    // provider-reported usage (session.usage.updated) is the real prompt size
+    // including system prompt and tool schemas — prefer it over estimation.
+    if (typeof state.lastUsedTokens === "number" && state.lastUsedTokens > 0) {
+        return state.lastUsedTokens
+    }
+
     // [FIX Bug 5] fallback: estimate from all content (text + tool outputs)
     // when no assistant message has token data (first turn or full compaction).
     let estimated = 0
@@ -70,7 +77,7 @@ export function estimateSystemPromptTokens(messages: WithParts[]): number {
     let firstInput: number | undefined
     for (const msg of messages) {
         if (msg.info.role !== "assistant") continue
-        const assistantInfo = msg.info as AssistantMessage
+        const assistantInfo = msg.info as AcpMessageInfo
         const t = assistantInfo.tokens
         if (!t) continue
         const input = (t.input || 0) + (t.cache?.read || 0) + (t.cache?.write || 0)
@@ -115,11 +122,11 @@ export function getCurrentParams(
             variant: undefined,
         }
     }
-    const userInfo = userMsg.info as UserMessage
-    const agent: string = userInfo.agent
-    const providerId: string | undefined = userInfo.model.providerID
-    const modelId: string | undefined = userInfo.model.modelID
-    const variant: string | undefined = userInfo.model.variant
+    const userInfo = userMsg.info as AcpMessageInfo
+    const agent: string | undefined = userInfo.agent
+    const providerId: string | undefined = userInfo.model?.providerID
+    const modelId: string | undefined = userInfo.model?.modelID
+    const variant: string | undefined = userInfo.model?.variant
 
     return { providerId, modelId, agent, variant }
 }
@@ -200,7 +207,7 @@ export function countMessageTextTokens(msg: WithParts): number {
     const parts = Array.isArray(msg.parts) ? msg.parts : []
     for (const part of parts) {
         if (part.type === "text") {
-            texts.push(part.text)
+            texts.push(part.text ?? "")
         }
     }
     if (texts.length === 0) return 0
@@ -212,7 +219,7 @@ export function countAllMessageTokens(msg: WithParts): number {
     const texts: string[] = []
     for (const part of parts) {
         if (part.type === "text") {
-            texts.push(part.text)
+            texts.push(part.text ?? "")
         } else {
             texts.push(...extractToolContent(part))
         }

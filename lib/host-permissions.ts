@@ -1,22 +1,33 @@
-export type PermissionAction = "ask" | "allow" | "deny"
+export type PermissionEffect = "allow" | "ask" | "deny"
 
-export type PermissionValue = PermissionAction | Record<string, PermissionAction>
-
-export type PermissionConfig = Record<string, PermissionValue> | undefined
-
-export interface HostPermissionSnapshot {
-    global: PermissionConfig
-    agents: Record<string, PermissionConfig>
+/** V2 ordered permission rule (`permissions` in opencode.json). */
+export interface PermissionRule {
+    action: string
+    resource: string
+    effect: PermissionEffect
 }
 
-type PermissionRule = {
-    permission: string
-    pattern: string
-    action: PermissionAction
+export type PermissionRuleset = ReadonlyArray<PermissionRule>
+
+export interface HostPermissionSnapshot {
+    global?: PermissionRuleset
+    agents: Record<string, PermissionRuleset | undefined>
+}
+
+const wildcardMatch = (value: string, pattern: string): boolean => {
+    const normalizedValue = value.replaceAll("\\", "/")
+    const escaped = pattern
+        .replaceAll("\\", "/")
+        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+        .replace(/\*/g, ".*")
+        .replace(/\?/g, ".")
+
+    const flags = process.platform === "win32" ? "si" : "s"
+    return new RegExp(`^${escaped}$`, flags).test(normalizedValue)
 }
 
 const findLastMatchingRule = (
-    rules: PermissionRule[],
+    rules: PermissionRuleset,
     predicate: (rule: PermissionRule) => boolean,
 ): PermissionRule | undefined => {
     for (let index = rules.length - 1; index >= 0; index -= 1) {
@@ -29,58 +40,26 @@ const findLastMatchingRule = (
     return undefined
 }
 
-const wildcardMatch = (value: string, pattern: string): boolean => {
-    const normalizedValue = value.replaceAll("\\", "/")
-    let escaped = pattern
-        .replaceAll("\\", "/")
-        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-        .replace(/\*/g, ".*")
-        .replace(/\?/g, ".")
+/**
+ * True when the host's rulesets end with a wildcard deny for the `compress`
+ * action. Later rulesets shadow earlier ones (session rules are appended after
+ * agent rules), and within a ruleset the last matching rule wins — matching
+ * OpenCode V2's evaluation order.
+ */
+export const compressDisabledByOpencode = (
+    ...rulesets: Array<PermissionRuleset | undefined>
+): boolean => {
+    const rules = rulesets.flatMap((ruleset) => (ruleset ? [...ruleset] : []))
+    const match = findLastMatchingRule(rules, (rule) => wildcardMatch("compress", rule.action))
 
-    if (escaped.endsWith(" .*")) {
-        escaped = escaped.slice(0, -3) + "( .*)?"
-    }
-
-    const flags = process.platform === "win32" ? "si" : "s"
-    return new RegExp(`^${escaped}$`, flags).test(normalizedValue)
-}
-
-const getPermissionRules = (permissionConfigs: PermissionConfig[]): PermissionRule[] => {
-    const rules: PermissionRule[] = []
-    for (const permissionConfig of permissionConfigs) {
-        if (!permissionConfig) {
-            continue
-        }
-
-        for (const [permission, value] of Object.entries(permissionConfig)) {
-            if (value === "ask" || value === "allow" || value === "deny") {
-                rules.push({ permission, pattern: "*", action: value })
-                continue
-            }
-
-            for (const [pattern, action] of Object.entries(value)) {
-                if (action === "ask" || action === "allow" || action === "deny") {
-                    rules.push({ permission, pattern, action })
-                }
-            }
-        }
-    }
-    return rules
-}
-
-export const compressDisabledByOpencode = (...permissionConfigs: PermissionConfig[]): boolean => {
-    const match = findLastMatchingRule(getPermissionRules(permissionConfigs), (rule) =>
-        wildcardMatch("compress", rule.permission),
-    )
-
-    return match?.pattern === "*" && match.action === "deny"
+    return match?.resource === "*" && match.effect === "deny"
 }
 
 export const resolveEffectiveCompressPermission = (
-    basePermission: PermissionAction,
+    basePermission: PermissionEffect,
     hostPermissions: HostPermissionSnapshot,
     agentName?: string,
-): PermissionAction => {
+): PermissionEffect => {
     if (basePermission === "deny") {
         return "deny"
     }
@@ -93,9 +72,10 @@ export const resolveEffectiveCompressPermission = (
         : basePermission
 }
 
+/** True when any rule matches the tool action (used to detect explicit host config). */
 export const hasExplicitToolPermission = (
-    permissionConfig: PermissionConfig,
+    ruleset: PermissionRuleset | undefined,
     tool: string,
 ): boolean => {
-    return permissionConfig ? Object.prototype.hasOwnProperty.call(permissionConfig, tool) : false
+    return ruleset ? ruleset.some((rule) => wildcardMatch(tool, rule.action)) : false
 }

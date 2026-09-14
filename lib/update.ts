@@ -2,7 +2,6 @@ import type { Logger } from "./logger"
 import { readFile, rm } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { PluginInput } from "@opencode-ai/plugin"
 
 type PackageJson = {
     name?: string
@@ -17,7 +16,11 @@ type UpdateResult =
 
 const PACKAGE_NAME = "opencode-acp"
 
-export function startAutoUpdate(ctx: PluginInput, enabled: boolean, logger?: Logger): void {
+export interface UpdateToastSink {
+    tui: { showToast: (input: { body: Record<string, unknown> }) => void }
+}
+
+export function startAutoUpdate(client: UpdateToastSink, enabled: boolean, logger?: Logger): void {
     if (!enabled) {
         logger?.info("Auto-update disabled by config")
         return
@@ -46,7 +49,7 @@ export function startAutoUpdate(ctx: PluginInput, enabled: boolean, logger?: Log
                 to: result.latest,
             })
             setTimeout(() => {
-                ctx.client.tui.showToast({
+                client.tui.showToast({
                     body: {
                         title: "ACP update ready",
                         message: `Updated ${result.name} from ${result.current} to ${result.latest}. Restart OpenCode to finish.`,

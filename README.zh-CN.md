@@ -88,17 +88,17 @@ ACP 将上下文管理的所有权限全部交给模型自己，而不依靠外�
 
 ## 安装
 
+需要 **OpenCode 2.0 或更新版本**（`@opencode/cli` + `@opencode/plugin`）。ACP 2.x 仅使用 V2 插件 API —— OpenCode 1.x 请继续使用 ACP 1.18.x。
+
 ```bash
-opencode plugin opencode-acp@stable --global
+opencode plugin add opencode-acp@stable
 ```
 
 或者添加到你的 opencode 配置中：
 
-```json
+```jsonc
 {
-    "plugin": {
-        "opencode-acp": "stable"
-    }
+    "plugins": ["opencode-acp@stable"]
 }
 ```
 

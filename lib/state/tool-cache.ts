@@ -48,10 +48,10 @@ export function syncToolCache(
                 const tokenCount = Math.round(rawLength / 4)
 
                 state.toolParameters.set(part.callID, {
-                    tool: part.tool,
+                    tool: part.tool ?? "",
                     parameters: part.state?.input ?? {},
-                    status: part.state.status as ToolStatus | undefined,
-                    error: part.state.status === "error" ? part.state.error : undefined,
+                    status: part.state?.status as ToolStatus | undefined,
+                    error: part.state?.status === "error" ? part.state.error : undefined,
                     turn: turnCounter,
                     tokenCount,
                 })

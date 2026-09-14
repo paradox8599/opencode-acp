@@ -2,7 +2,16 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from "fs
 import { join, dirname } from "path"
 import { homedir } from "os"
 import { parse } from "jsonc-parser/lib/esm/main.js"
-import type { PluginInput } from "@opencode-ai/plugin"
+/**
+ * Minimal init context: the V2 plugin context facade (directory + optional
+ * toast sink). Full PluginInput is V1 API and no longer used.
+ */
+export interface AcpInitContext {
+    directory: string
+    client?: {
+        tui?: { showToast?: (input: { body: Record<string, unknown> }) => void }
+    }
+}
 import {
     VALID_CONFIG_KEYS,
     getInvalidConfigKeys,
@@ -258,7 +267,7 @@ export {
 } from "./config-validation"
 
 function showConfigWarnings(
-    ctx: PluginInput,
+    ctx: AcpInitContext,
     configPath: string,
     configData: Record<string, any>,
     isProject: boolean,
@@ -290,7 +299,7 @@ function showConfigWarnings(
 
     setTimeout(() => {
         try {
-            ctx.client.tui.showToast({
+            ctx.client?.tui?.showToast?.({
                 body: {
                     title: `ACP: ${configType} warning`,
                     message: `${configPath}\n${messages.join("\n")}`,
@@ -408,7 +417,7 @@ function findOpencodeDir(startDir: string): string | null {
     return null
 }
 
-function getConfigPaths(ctx?: PluginInput): {
+function getConfigPaths(ctx?: AcpInitContext): {
     global: string | null
     configDir: string | null
     project: string | null
@@ -745,10 +754,10 @@ function mergeLayer(config: PluginConfig, data: Record<string, any>): PluginConf
     }
 }
 
-function scheduleParseWarning(ctx: PluginInput, title: string, message: string): void {
+function scheduleParseWarning(ctx: AcpInitContext, title: string, message: string): void {
     setTimeout(() => {
         try {
-            ctx.client.tui.showToast({
+            ctx.client?.tui?.showToast?.({
                 body: {
                     title,
                     message,
@@ -760,7 +769,7 @@ function scheduleParseWarning(ctx: PluginInput, title: string, message: string):
     }, 7000)
 }
 
-export function getConfig(ctx: PluginInput): PluginConfig {
+export function getConfig(ctx: AcpInitContext): PluginConfig {
     let config = deepCloneConfig(defaultConfig)
     const configPaths = getConfigPaths(ctx)
 

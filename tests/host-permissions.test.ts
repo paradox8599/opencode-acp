@@ -4,18 +4,25 @@ import {
     compressDisabledByOpencode,
     hasExplicitToolPermission,
     resolveEffectiveCompressPermission,
+    type PermissionRuleset,
 } from "../lib/host-permissions"
 
-test("wildcard deny disables compress", () => {
-    assert.equal(compressDisabledByOpencode({ "*": "deny" }), true)
+const rule = (action: string, resource: string, effect: "allow" | "ask" | "deny") => ({
+    action,
+    resource,
+    effect,
+})
+
+test("wildcard deny rule disables compress", () => {
+    assert.equal(compressDisabledByOpencode([rule("*", "*", "deny")]), true)
 })
 
 test("later explicit compress allow overrides wildcard deny", () => {
     assert.equal(
-        compressDisabledByOpencode({
-            "*": "deny",
-            compress: "allow",
-        }),
+        compressDisabledByOpencode([
+            rule("*", "*", "deny"),
+            rule("compress", "*", "allow"),
+        ]),
         false,
     )
 })
@@ -25,9 +32,9 @@ test("agent wildcard deny disables compress even when global config allows it", 
         resolveEffectiveCompressPermission(
             "allow",
             {
-                global: { question: "allow" },
+                global: [rule("question", "*", "allow")],
                 agents: {
-                    fast: { "*": "deny", question: "allow" },
+                    fast: [rule("*", "*", "deny"), rule("question", "*", "allow")],
                 },
             },
             "fast",
@@ -41,9 +48,9 @@ test("agent explicit allow overrides global wildcard deny", () => {
         resolveEffectiveCompressPermission(
             "allow",
             {
-                global: { "*": "deny" },
+                global: [rule("*", "*", "deny")],
                 agents: {
-                    build: { compress: "allow" },
+                    build: [rule("compress", "*", "allow")],
                 },
             },
             "build",
@@ -52,53 +59,25 @@ test("agent explicit allow overrides global wildcard deny", () => {
     )
 })
 
-test("permission wildcards follow opencode-style matching", () => {
-    assert.equal(compressDisabledByOpencode({ "c?mpress": "deny" }), true)
+test("permission action wildcards follow opencode-style matching", () => {
+    assert.equal(compressDisabledByOpencode([rule("c?mpress", "*", "deny")]), true)
 })
 
-test("pattern-specific denies do not disable the whole tool", () => {
-    assert.equal(
-        compressDisabledByOpencode({
-            compress: {
-                "/tmp/*": "deny",
-            },
-        }),
-        false,
-    )
+test("resource-specific denies do not disable the whole tool", () => {
+    assert.equal(compressDisabledByOpencode([rule("compress", "/tmp/*", "deny")]), false)
 })
 
-test("compress permission resolution works without Array.findLast", () => {
-    const originalFindLast = Array.prototype.findLast
-
-    try {
-        delete (Array.prototype as Array<unknown> & { findLast?: unknown }).findLast
-
-        assert.equal(
-            compressDisabledByOpencode({
-                "*": "deny",
-                compress: "allow",
-            }),
-            false,
-        )
-    } finally {
-        Array.prototype.findLast = originalFindLast
-    }
+test("last matching rule wins within one ruleset", () => {
+    const ruleset: PermissionRuleset = [
+        rule("compress", "*", "deny"),
+        rule("compress", "*", "allow"),
+    ]
+    assert.equal(compressDisabledByOpencode(ruleset), false)
 })
 
-test("explicit compress permissions are detected", () => {
-    assert.equal(hasExplicitToolPermission({ compress: "ask" }, "compress"), true)
-    assert.equal(hasExplicitToolPermission({ "*": "deny" }, "compress"), false)
-})
-
-test("explicit permission detection works without Object.hasOwn", () => {
-    const originalHasOwn = Object.hasOwn
-
-    try {
-        delete (Object as typeof Object & { hasOwn?: unknown }).hasOwn
-
-        assert.equal(hasExplicitToolPermission({ compress: "ask" }, "compress"), true)
-        assert.equal(hasExplicitToolPermission({ "*": "deny" }, "compress"), false)
-    } finally {
-        Object.hasOwn = originalHasOwn
-    }
+test("explicit compress permission is detected", () => {
+    assert.equal(hasExplicitToolPermission([rule("compress", "*", "ask")], "compress"), true)
+    assert.equal(hasExplicitToolPermission([rule("*", "*", "deny")], "compress"), true)
+    assert.equal(hasExplicitToolPermission([rule("edit", "*", "ask")], "compress"), false)
+    assert.equal(hasExplicitToolPermission(undefined, "compress"), false)
 })

@@ -31,7 +31,7 @@ SCRIPT_DIR="$REPO_ROOT/scripts/e2e"
 FAKE_HOME="/tmp/acp-e2e"
 OC_ENV="HOME=$FAKE_HOME XDG_CONFIG_HOME=$FAKE_HOME/.config XDG_DATA_HOME=$FAKE_HOME/.local/share"
 FAKE_LLM_PORT="${FAKE_LLM_PORT:-8400}"
-OPENCODE_BIN="${OPENCODE_BIN:-$(which opencode)}"
+OPENCODE_BIN="${OPENCODE_BIN:-$(command -v opencode2 || command -v opencode)}"
 BUN_BIN="${BUN_BIN:-$(which bun)}"
 NODE_BIN="${NODE_BIN:-$(which node)}"
 
@@ -112,13 +112,14 @@ ACPJSON
 cat > "$FAKE_HOME/.config/opencode/opencode.json" <<OCJSON
 {
   "\$schema": "https://opencode.ai/config.json",
-  "plugin": ["$ACP_DIST"],
-  "provider": {
+  "plugins": ["$ACP_DIST"],
+  "providers": {
     "fake": {
-      "npm": "@ai-sdk/openai-compatible",
       "name": "Fake (E2E test)",
-      "options": {
-        "baseURL": "http://127.0.0.1:$FAKE_LLM_PORT/v1"
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://127.0.0.1:$FAKE_LLM_PORT/v1",
+        "apiKey": "fake"
       },
       "models": {
         "fake-model": {
@@ -128,19 +129,17 @@ cat > "$FAKE_HOME/.config/opencode/opencode.json" <<OCJSON
       }
     }
   },
-  "agent": {
+  "agents": {
     "general": {
       "model": "fake/fake-model",
       "prompt": "You are a general-purpose assistant."
     }
   },
   "model": "fake/fake-model",
-  "permission": {
-    "compress": "allow",
-    "acp_status": "allow",
-    "task": "allow",
-    "bash": "allow"
-  }
+  "permissions": [
+    { "action": "*", "resource": "*", "effect": "allow" }
+  ],
+  "compaction": { "auto": false }
 }
 OCJSON
 
@@ -148,7 +147,7 @@ write_acp_config "$FAKE_HOME/.config/opencode/acp.jsonc"
 pass "opencode config written"
 
 step "warm up opencode DB (migration takes time on first run)"
-env $OC_ENV timeout -s KILL 300 "$OPENCODE_BIN" session list </dev/null >/dev/null 2>&1 || true
+env $OC_ENV timeout -s KILL 300 "$OPENCODE_BIN" session list --standalone </dev/null >/dev/null 2>&1 || true
 pass "opencode warm-up done"
 
 TOTAL_PASS=0
@@ -166,7 +165,7 @@ for scenario in "${SCENARIOS[@]}"; do
 
     rm -rf "$FAKE_HOME/.local/share/opencode/storage/plugin/acp"
     rm -f "$FAKE_HOME/.local/share/opencode/opencode.db"
-    env $OC_ENV timeout -s KILL 120 "$OPENCODE_BIN" session list </dev/null >/dev/null 2>&1 || true
+    env $OC_ENV timeout -s KILL 120 "$OPENCODE_BIN" session list --standalone </dev/null >/dev/null 2>&1 || true
 
     rm -f /tmp/acp-e2e-turn-counter
     rm -f /tmp/acp-e2e-turn-counter-child
@@ -201,12 +200,12 @@ for scenario in "${SCENARIOS[@]}"; do
         msg="E2E test message $i for $scenario_name"
         info "  turn $i: opencode run"
         if [[ $i -eq 1 ]]; then
-            env $OC_ENV timeout -s KILL 120 "$OPENCODE_BIN" run \
+            env $OC_ENV timeout -s KILL 120 "$OPENCODE_BIN" run --standalone \
                 --model fake/fake-model \
                 --format json \
                 "$msg" </dev/null > /tmp/acp-e2e-turn-$i.json 2>&1 || true
         else
-            env $OC_ENV timeout -s KILL 120 "$OPENCODE_BIN" run \
+            env $OC_ENV timeout -s KILL 120 "$OPENCODE_BIN" run --standalone \
                 --model fake/fake-model \
                 --format json \
                 --continue \
@@ -215,7 +214,7 @@ for scenario in "${SCENARIOS[@]}"; do
         info "  turn $i events: $(wc -l < /tmp/acp-e2e-turn-$i.json)"
     done
 
-    SESSION_ID=$(env $OC_ENV "$OPENCODE_BIN" session list --format json 2>/dev/null \
+    SESSION_ID=$(env $OC_ENV "$OPENCODE_BIN" session list --standalone --format json 2>/dev/null \
         | "$NODE_BIN" -e "
             const data = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
             const sessions = Array.isArray(data) ? data : (data.data || data.sessions || []);
@@ -225,7 +224,7 @@ for scenario in "${SCENARIOS[@]}"; do
 
     if [[ -z "$SESSION_ID" ]]; then
         info "session list fallback: reading from DB"
-        SESSION_ID=$(env $OC_ENV "$OPENCODE_BIN" session list 2>&1 | head -5)
+        SESSION_ID=$(env $OC_ENV "$OPENCODE_BIN" session list --standalone 2>&1 | head -5)
         info "raw session list: $SESSION_ID"
         fail "could not determine session ID for $scenario_name"
     fi

@@ -8,7 +8,7 @@ import {
     renderMessagePriorityGuidance,
 } from "../../prompts/extensions/nudge"
 import type { RuntimePrompts } from "../../prompts/store"
-import type { UserMessage } from "@opencode-ai/sdk/v2"
+import type { AcpMessageInfo } from "../../state"
 import {
     type CompressionPriorityMap,
     type MessagePriority,
@@ -98,7 +98,7 @@ export function getModelInfo(messages: WithParts[]): LastUserModelContext {
         }
     }
 
-    const userInfo = lastUserMessage.info as UserMessage
+    const userInfo = lastUserMessage.info as AcpMessageInfo
     return {
         providerId: userInfo.model?.providerID,
         modelId: userInfo.model?.modelID,

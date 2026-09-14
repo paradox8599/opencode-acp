@@ -21,7 +21,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import type { PluginConfig } from "../lib/config"
-import { createChatMessageTransformHandler, createSystemPromptHandler } from "../lib/hooks"
+import { createChatMessageTransformHandler } from "../lib/hooks"
 import { Logger } from "../lib/logger"
 import { SessionStateRegistry, createSessionState, type SessionState, type WithParts } from "../lib/state"
 import { createTestRegistry } from "./registry-stub"
@@ -297,141 +297,44 @@ test("model switch to smaller window: emergency fires when actually over thresho
 
 // ─── Catalog population ──────────────────────────────────────────────────────
 
-test("system.transform records model limit even when session state is absent", async () => {
+test("catalog hydration records model limits without session state", async () => {
     const registry = new SessionStateRegistry(new Logger(false))
-    const handler = createSystemPromptHandler(
-        registry,
-        new Logger(false),
-        buildConfig(),
-        createMockPrompts(),
-    )
 
-    await handler(
-        {
-            sessionID: "never-seen",
-            model: {
-                id: NEW_MODEL,
-                providerID: PROVIDER,
-                limit: { context: NEW_LIMIT },
-            },
-        },
-        { system: ["base system prompt"] },
-    )
-
-    assert.equal(registry.resolveModelLimit(PROVIDER, NEW_MODEL), NEW_LIMIT)
-    assert.equal(registry.resolveModelLimit(PROVIDER, "other"), undefined)
-})
-
-test("system.transform records the model identity alongside the limit", async () => {
-    const state = createSessionState()
-    state.sessionId = SID
-    const registry = createTestRegistry(state)
-    const handler = createSystemPromptHandler(
-        registry,
-        new Logger(false),
-        buildConfig(),
-        createMockPrompts(),
-    )
-
-    await handler(
-        {
-            sessionID: SID,
-            model: { id: NEW_MODEL, providerID: PROVIDER, limit: { context: NEW_LIMIT } },
-        },
-        { system: ["base system prompt"] },
-    )
-
-    assert.equal(state.modelContextLimit, NEW_LIMIT)
-    assert.equal(state.modelProviderID, PROVIDER)
-    assert.equal(state.modelID, NEW_MODEL)
-})
-
-test("registry catalog ignores invalid entries and unknown lookups", () => {
-    const registry = new SessionStateRegistry(new Logger(false))
-    registry.recordModelLimit(PROVIDER, NEW_MODEL, NEW_LIMIT)
-    registry.recordModelLimit(undefined, NEW_MODEL, 123)
-    registry.recordModelLimit(PROVIDER, undefined, 123)
-    registry.recordModelLimit(PROVIDER, "zero", 0)
-    registry.recordModelLimit(PROVIDER, "negative", -5)
-
-    assert.equal(registry.resolveModelLimit(PROVIDER, NEW_MODEL), NEW_LIMIT)
-    assert.equal(registry.resolveModelLimit(PROVIDER, "zero"), undefined)
-    assert.equal(registry.resolveModelLimit(undefined, NEW_MODEL), undefined)
-    assert.equal(registry.resolveModelLimit(PROVIDER, undefined), undefined)
-})
-
-test("hydrateModelLimitsFromClient seeds the catalog from /config/providers", async () => {
-    const registry = new SessionStateRegistry(new Logger(false))
-    const client = {
+    const recorded = await registry.hydrateModelLimitsFromClient({
         config: {
             providers: async () => ({
                 data: {
                     providers: [
                         {
                             id: PROVIDER,
-                            models: {
-                                [NEW_MODEL]: { limit: { context: NEW_LIMIT } },
-                                [OLD_MODEL]: { limit: { context: OLD_LIMIT } },
-                                broken: { limit: {} },
-                            },
+                            models: { [NEW_MODEL]: { limit: { context: NEW_LIMIT } } },
                         },
-                        { id: "no-models-provider" },
                     ],
                 },
             }),
         },
-    }
-
-    const recorded = await registry.hydrateModelLimitsFromClient(client)
-    assert.equal(recorded, 2)
-    assert.equal(registry.resolveModelLimit(PROVIDER, NEW_MODEL), NEW_LIMIT)
-    assert.equal(registry.resolveModelLimit(PROVIDER, OLD_MODEL), OLD_LIMIT)
-    assert.equal(registry.resolveModelLimit(PROVIDER, "broken"), undefined)
-})
-
-test("hydrateModelLimitsFromClient tolerates missing and throwing clients", async () => {
-    const registry = new SessionStateRegistry(new Logger(false))
-
-    assert.equal(await registry.hydrateModelLimitsFromClient({}), 0)
-    assert.equal(
-        await registry.hydrateModelLimitsFromClient({
-            config: { providers: async () => { throw new Error("offline") } },
-        }),
-        0,
-    )
-})
-
-// ─── Issue #346: spawn+resume loses the limit (no persistence, empty catalog) ─
-
-test("catalog miss + provider config available: lazy hydration resolves the limit (#346)", async () => {
-    // Production path: headless spawn+resume, init-time seed raced server
-    // readiness and left the catalog empty. During the request the server is
-    // up, so a one-time lazy hydration must recover the limit.
-    const { state } = await runTransform({
-        currentTokens: 100_000,
-        modelId: NEW_MODEL,
-        initialLimit: undefined,
-        client: {
-            session: { get: async () => ({ data: { parentID: null } }) },
-            config: {
-                providers: async () => ({
-                    data: {
-                        providers: [
-                            {
-                                id: PROVIDER,
-                                models: { [NEW_MODEL]: { limit: { context: NEW_LIMIT } } },
-                            },
-                        ],
-                    },
-                }),
-            },
-        },
     })
 
-    assert.equal(state.modelContextLimit, NEW_LIMIT, "limit must resolve via lazy hydration")
+    assert.equal(recorded, 1)
+    assert.equal(registry.resolveModelLimit(PROVIDER, NEW_MODEL), NEW_LIMIT)
+    assert.equal(registry.resolveModelLimit(PROVIDER, "other"), undefined)
 })
 
-test("system.transform persists the limit so spawned processes resume with it (#346)", async () => {
+test("request model identity reconciles the limit from the catalog", async () => {
+    const { state } = await runTransform({
+        currentTokens: 150_000,
+        modelId: NEW_MODEL,
+        initialLimit: OLD_LIMIT,
+        initialModel: { providerID: PROVIDER, modelID: OLD_MODEL },
+        catalog: [[PROVIDER, NEW_MODEL, NEW_LIMIT]],
+    })
+
+    assert.equal(state.modelContextLimit, NEW_LIMIT)
+    assert.equal(state.modelProviderID, PROVIDER)
+    assert.equal(state.modelID, NEW_MODEL)
+})
+
+test("the reconciled limit is persisted so spawned processes resume with it (#346)", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "acp-persist-"))
     const prevDataHome = process.env.XDG_DATA_HOME
     const prevConfigHome = process.env.XDG_CONFIG_HOME
@@ -442,22 +345,19 @@ test("system.transform persists the limit so spawned processes resume with it (#
         const state = createSessionState()
         state.sessionId = SID
         const registry = createTestRegistry(state)
-        const handler = createSystemPromptHandler(
+        registry.recordModelLimit(PROVIDER, NEW_MODEL, NEW_LIMIT)
+        const handler = createChatMessageTransformHandler(
+            createMockClient(),
             registry,
             new Logger(false),
             buildConfig(),
             createMockPrompts(),
+            { global: undefined, agents: {} },
         )
 
-        await handler(
-            {
-                sessionID: SID,
-                model: { id: NEW_MODEL, providerID: PROVIDER, limit: { context: NEW_LIMIT } },
-            },
-            { system: ["base system prompt"] },
-        )
-        // saveSessionState is fire-and-forget — poll for the write to land
-        // (a fixed sleep would race slow CI).
+        const messages: WithParts[] = [makeUserMessage("msg-u1", "current question", NEW_MODEL)]
+        await handler({}, { messages })
+
         const file = join(tempDir, "opencode", "storage", "plugin", "acp", `${SID}.json`)
         let persisted: Record<string, unknown> | undefined
         const deadline = Date.now() + 2000
@@ -468,7 +368,7 @@ test("system.transform persists the limit so spawned processes resume with it (#
                 await new Promise((resolve) => setTimeout(resolve, 50))
             }
         }
-        assert.ok(persisted, "state file must be written by the system hook")
+        assert.ok(persisted, "state file must be written by the transform")
         assert.equal(persisted.modelContextLimit, NEW_LIMIT)
         assert.equal(persisted.modelProviderID, PROVIDER)
         assert.equal(persisted.modelID, NEW_MODEL)
@@ -479,34 +379,6 @@ test("system.transform persists the limit so spawned processes resume with it (#
         if (prevConfigHome === undefined) delete process.env.XDG_CONFIG_HOME
         else process.env.XDG_CONFIG_HOME = prevConfigHome
     }
-})
-
-test("internal-agent system prompts must not overwrite the session limit (#346)", async () => {
-    // Title/summary/compaction agents run on their own small model; their
-    // system.transform must not corrupt the session's real limit.
-    const state = createSessionState()
-    state.sessionId = SID
-    state.modelContextLimit = OLD_LIMIT
-    state.modelProviderID = PROVIDER
-    state.modelID = OLD_MODEL
-    const registry = createTestRegistry(state)
-    const handler = createSystemPromptHandler(
-        registry,
-        new Logger(false),
-        buildConfig(),
-        createMockPrompts(),
-    )
-
-    await handler(
-        {
-            sessionID: SID,
-            model: { id: "title-model", providerID: PROVIDER, limit: { context: 8_000 } },
-        },
-        { system: ["You are a title generator for conversations."] },
-    )
-
-    assert.equal(state.modelContextLimit, OLD_LIMIT, "title-agent limit must not overwrite")
-    assert.equal(state.modelID, OLD_MODEL)
 })
 
 test("hydrateAndResolve: cached hit never touches the client", async () => {

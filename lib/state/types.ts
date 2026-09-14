@@ -1,9 +1,69 @@
 import type { CompressionTimingState } from "../compress/timing"
-import { Message, Part } from "@opencode-ai/sdk/v2"
+
+/**
+ * Internal message model.
+ *
+ * ACP's pipeline historically operated on the V1 SDK message shape
+ * (`{ info, parts }`). The OpenCode V2 plugin API hands plugins native
+ * `@opencode/ai` messages instead, so the pipeline keeps this internal shape
+ * and `lib/v2/ai-adapter.ts` translates in both directions. Only the fields
+ * the pipeline reads/writes are declared; extra fields are preserved by the
+ * adapter's source references.
+ */
+
+export interface AcpToolState {
+    status: "pending" | "running" | "completed" | "error"
+    input?: unknown
+    output?: string
+    error?: string
+    title?: string
+    metadata?: Record<string, unknown>
+    time?: { start?: number; end?: number; completed?: number }
+}
+
+export interface AcpPart {
+    type: string
+    text?: string
+    tool?: string
+    callID?: string
+    id?: string
+    sessionID?: string
+    messageID?: string
+    state?: AcpToolState
+    metadata?: Record<string, unknown>
+    synthetic?: boolean
+    ignored?: boolean
+    reason?: string
+    [key: string]: unknown
+}
+
+export interface AcpMessageInfo {
+    id: string
+    sessionID?: string
+    role: "user" | "assistant" | "system"
+    time: { created: number }
+    summary?: boolean
+    tokens?: {
+        input?: number
+        output?: number
+        reasoning?: number
+        cache?: { read?: number; write?: number }
+    }
+    model?: { providerID?: string; modelID?: string; variant?: string }
+    modelID?: string
+    providerID?: string
+    parentID?: string
+    agent?: string
+    mode?: string
+    path?: { cwd?: string; root?: string }
+    cost?: number
+    tools?: unknown
+    [key: string]: unknown
+}
 
 export interface WithParts {
-    info: Message
-    parts: Part[]
+    info: AcpMessageInfo
+    parts: AcpPart[]
 }
 
 export type ToolStatus = "pending" | "running" | "completed" | "error"
@@ -191,6 +251,21 @@ export interface SessionState {
      *   normally, result carries an "acknowledgeRisk was ignored" note (#301)
      * - Normal call (no acknowledgeRisk) → quality runs normally
      */
+    /**
+     * Durable ids of ACP-authored synthetic output messages (compression
+     * notices, /acp command output). They stay visible in the session
+     * transcript but are stripped from the model-visible context by the V2
+     * context hook.
+     */
+    hiddenMessageIds: Set<string>
+    /**
+     * Provider-reported context usage from the latest model request
+     * (input + output + reasoning + cache), fed by the V2
+     * `session.usage.updated` event. V2 AI messages carry no `tokens` field,
+     * so this is the only source of real usage data for nudge thresholds.
+     * Transient (not persisted).
+     */
+    lastUsedTokens?: number
     qualityGateRetryPending: boolean
     /**
      * Transient flag (NOT persisted): set to true after the "model reports no

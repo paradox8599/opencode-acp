@@ -43,8 +43,25 @@ export function resolveCompressionDuration(
     return typeof pendingToRunningMs === "number" ? pendingToRunningMs : runtimeMs
 }
 
-export function applyPendingCompressionDurations(state: SessionState): number {
-    if (state.compressionTiming.pendingByCallId.size === 0) {
+/**
+ * Record a duration measured by the tool itself (V2 has no tool-part lifecycle
+ * event). Applied by the next `applyPendingCompressionDurations` call.
+ */
+export function recordCompressionDuration(
+    state: SessionState,
+    messageId: string,
+    callId: string,
+    durationMs: number,
+): void {
+    const key = buildCompressionTimingKey(messageId, callId)
+    state.compressionTiming.pendingByCallId.set(key, {
+        messageId,
+        callId,
+        durationMs: Math.max(0, Math.round(durationMs)),
+    })
+}
+
+export function applyPendingCompressionDurations(state: SessionState): number {    if (state.compressionTiming.pendingByCallId.size === 0) {
         return 0
     }
 
