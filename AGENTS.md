@@ -253,50 +253,95 @@ State is persisted to `~/.local/share/opencode/storage/plugin/acp/{sessionId}.js
 
 ### 2.4 Configuration System
 
-Three-layer config merging (later layers override earlier):
+Three-layer config merging (later layers override earlier; each layer may use `.jsonc` or `.json`, `.jsonc` wins):
 
 ```
-1. Global:     ~/.config/opencode/acp.jsonc
-2. Config dir: $OPENCODE_CONFIG_DIR/acp.jsonc
-3. Project:    .opencode/acp.jsonc
+1. Global:     $XDG_CONFIG_HOME/opencode/acp.jsonc (default: ~/.config/opencode/acp.jsonc)
+2. Config dir: $OPENCODE_CONFIG_DIR/acp.jsonc (only when the env var is set)
+3. Project:    nearest `.opencode/acp.jsonc` walking up from the session directory
 ```
+
+On first run, `createDefaultConfig()` (`lib/config.ts:460`) writes a stub global `acp.jsonc` containing only `$schema` if none exists.
 
 #### Default Configuration
+
+`defaultConfig` (`lib/config.ts:314`) — the effective values when no config layer overrides them:
 
 ```typescript
 {
     enabled: true,
     autoUpdate: true,
     debug: false,
-    pruneNotification: "detailed",
-    pruneNotificationType: "toast",
-    commands: { enabled: true, protectedTools: ["task", "skill", "todowrite", "todoread", "compress", "batch", "plan_enter", "plan_exit", "write", "edit"] },
+    logLevel: "info",                 // "debug" | "info" | "warn" | "error"; debug: true forces full debug logging
     allowSubAgents: true,
+    pruneNotification: "off",         // "off" | "minimal" | "detailed"
+    pruneNotificationType: "toast",   // "chat" | "toast" — chat mode can freeze providers that reject empty messages
+    commands: {
+        enabled: true,
+        protectedTools: ["task", "skill", "todowrite", "todoread", "compress", "decompress", "batch", "plan_enter", "plan_exit", "write", "edit"],
+    },
     experimental: { customPrompts: false },
     protectedFilePatterns: [],
     compress: {
-        mode: "range",
-        permission: "allow",
+        permission: "allow",          // "allow" | "ask" | "deny"
         showCompression: true,
         summaryBuffer: true,
-        maxContextLimit: "55%",           // percentage of model context limit
-        minContextLimit: "45%",           // percentage of model context limit
-        nudgeFrequency: 5,               // nudges every N turns
-        iterationNudgeThreshold: 15,     // nudge after N messages since last user message
-        nudgeForce: "soft",              // "strong" | "soft"
-        protectedTools: ["skill"],       // root default; an explicit array replaces inherited policy (use [] to protect nothing)
+        candidates: false,            // opt-in micro/episode candidates in nudges + acp_status
+        maxContextLimit: "80%",       // number | "NN%" of the model context limit
+        minContextLimit: "80%",       // @deprecated — scheduled for removal, kept honored until then
+        contextLimitFallback: 128000, // used when the model's window is unknown; 0 disables the fallback
+        nudgeFrequency: 5,            // turn nudge every N turns
+        minNudgeContextPercent: 5,
+        nudgeGrowthTokens: 50000,     // growth-nudge re-arm threshold (tokens)
+        iterationNudgeThreshold: 15,  // nudge after N messages since the last user message
+        nudgeForce: "soft",           // "strong" | "soft"
+        protectedTools: ["skill", "compress"], // root default; an explicit array replaces inherited policy (use [] to protect nothing)
         protectTags: false,
         protectUserMessages: false,
+        maxSummaryLengthHard: 20000,
+        minCompressRange: 5000,
+        minNudgeGrowthRatio: 0.45,
+        minNudgeGrowthFloor: 5000,
+        emergencyThresholdPercent: "98%",
+        maxVisibleSegments: 50,
+        keepEmbedMaxChars: 2000,
+        lastSegmentSoftBlock: true,
+        preserveRecentMessages: 5,    // protected tail (messages)
+        preserveRecentTokens: 5000,   // protected tail (tokens)
+        preserveLastUserMessage: true,
+        reasoning: { drop: true, threshold: 2048 }, // #368 — drop oversized reasoning from closed-turn compress calls
     },
     gc: {
         algorithm: "truncate",
         promotionThreshold: 5,           // young → old after this many survivals
-        maxBlockAge: 15,                 // deactivate block after this many survivals
+        maxBlockAge: Number.MAX_SAFE_INTEGER, // no-op — age-based deactivation removed (memory-loss fix)
         maxOldGenSummaryLength: 3000,    // truncate old-gen summaries exceeding this (chars)
         majorGcThresholdPercent: "100%", // run major GC when usage exceeds this
+        batchCleanup: { lowThreshold: "55%", highThreshold: "75%", forceThreshold: "90%" },
+    },
+    qualityGate: {
+        enabled: false,
+        algorithm: "rouge-recall-v1",
+        algorithms: {
+            "rouge-recall-v1": { layer1MinChars: 200, layer1MinRetentionPct: 5.0, layer2MaxRougeF1: 0.05, layer2MaxTop20Recall: 0.2 },
+        },
+    },
+    messageFilters: {
+        enabled: true,
+        filters: {
+            "omo-system-reminder": { enabled: true },
+            "omo-todo-continuation": { enabled: true },
+            "omo-context": { enabled: true },
+            "omo-task-directive": { enabled: true },
+            "omo-mode-injection": { enabled: true },
+        },
     },
 }
 ```
+
+Keys with no default (unset unless configured): `storagePath`, `compress.modelMaxLimits`, `compress.providers` (per-provider/per-model cascade, resolved field-by-field: `providers[p].models[m]` > `providers[p]` > global), `compress.completionReserveTokens`, `compress.toolOutputNudgeThreshold`.
+
+The `"compress"` tool is always force-protected from compression, regardless of `compress.protectedTools` / `commands.protectedTools` overrides.
 
 ### 2.5 Storage Paths
 
