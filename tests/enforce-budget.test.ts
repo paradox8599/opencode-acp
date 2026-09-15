@@ -11,7 +11,6 @@ import {
     estimateWireTokens,
     resolveContextWindow,
 } from "../lib/messages/enforce-budget"
-import { countTokens } from "../lib/token-utils"
 
 const noopLogger: Logger = {
     debug: () => {},
@@ -36,12 +35,14 @@ const warnLogger: Logger = {
 // chars/4 regardless of tokenizer run-length behavior on repeated characters.
 const FILLER = "The quick brown fox jumps over the lazy dog. ".repeat(20)
 
-function makeConfig(overrides: {
-    modelContextLimit?: number
-    maxContextLimit?: number | `${number}%`
-    reserve?: number
-    protectedTools?: string[]
-} = {}): { config: PluginConfig; state: SessionState } {
+function makeConfig(
+    overrides: {
+        modelContextLimit?: number
+        maxContextLimit?: number | `${number}%`
+        reserve?: number
+        protectedTools?: string[]
+    } = {},
+): { config: PluginConfig; state: SessionState } {
     const state = createSessionState()
     state.sessionId = "session-budget"
     if (overrides.modelContextLimit !== undefined) {
@@ -191,13 +192,11 @@ test("estimateWireTokens: fallback sums content plus system prompt", () => {
         makeUserText(nextId("u"), content),
         makeAssistantText(nextId("a"), content),
     ]
-    // Single text-part messages count exactly countTokens(text), so the
-    // fallback must equal 2x content + system prompt (tiny tolerance for
-    // join overhead).
-    const expected = 500 + countTokens(content) * 2
+    // The fallback counts content with the chars/4 estimator (fast path) plus
+    // the system prompt estimate.
+    const expected = 500 + Math.round(content.length / 4) * 2
     const est = estimateWireTokens(state, messages)
-    assert.ok(est >= expected, `expected >= ${expected}, got ${est}`)
-    assert.ok(est <= expected + 5, `expected <= ${expected + 5}, got ${est}`)
+    assert.equal(est, expected)
 })
 
 test("enforceContextBudget: no-op when window unknown", () => {
@@ -309,7 +308,11 @@ test("enforceContextBudget: clears oldest outputs when truncation alone cannot f
     const result = enforceContextBudget(state, config, noopLogger, messages)
     assert.ok(result)
     assert.equal(result!.applied, true)
-    assert.equal(result!.truncatedCount, 0, `truncation must skip non-shrinking content: ${JSON.stringify(result)}`)
+    assert.equal(
+        result!.truncatedCount,
+        0,
+        `truncation must skip non-shrinking content: ${JSON.stringify(result)}`,
+    )
     assert.ok(result!.clearedCount >= 1, `expected clearing, got ${JSON.stringify(result)}`)
     assert.ok(result!.finalEstimate <= result!.budget, "final estimate must fit budget")
     assert.equal(outputs[0].parts[0].state.output, "[Old tool result content cleared]")
@@ -443,11 +446,38 @@ test("enforceContextBudget: skips truncation that would grow the output, clears 
     const result = enforceContextBudget(state, config, noopLogger, messages)
     assert.ok(result)
     assert.equal(result!.applied, true)
-    assert.equal(result!.truncatedCount, 0, `truncation must skip non-shrinking content: ${JSON.stringify(result)}`)
+    assert.equal(
+        result!.truncatedCount,
+        0,
+        `truncation must skip non-shrinking content: ${JSON.stringify(result)}`,
+    )
     assert.equal(result!.clearedCount, 1)
     assert.ok(
         result!.finalEstimate <= result!.budget,
         `expected final <= budget, got ${result!.finalEstimate} vs ${result!.budget}`,
     )
     assert.equal(small.parts[0].state.output, "[Old tool result content cleared]")
+})
+
+test("estimateWireTokens: provider usage anchors and appends messages after the last assistant", () => {
+    const { state } = makeConfig({ modelContextLimit: 1000000 })
+    state.lastUsedTokens = 40000
+
+    const messages: WithParts[] = [
+        makeUserText(nextId("u"), "hello"),
+        makeAssistantText(nextId("a"), "hi there"),
+        makeUserText(nextId("u"), "x".repeat(400)),
+    ]
+
+    // 40000 (provider-reported last request) + 400/4 for the appended user message.
+    assert.equal(estimateWireTokens(state, messages), 40100)
+})
+
+test("estimateWireTokens: ignores implausible provider usage and estimates content", () => {
+    const { state } = makeConfig({ modelContextLimit: 1000000 })
+    state.lastUsedTokens = 182822537
+
+    const messages: WithParts[] = [makeUserText(nextId("u"), "x".repeat(400))]
+
+    assert.equal(estimateWireTokens(state, messages), 100)
 })

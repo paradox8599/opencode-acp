@@ -63,6 +63,7 @@ export interface PersistedSessionState {
     modelID?: string
     hiddenMessageIds?: string[]
     lastUsedTokens?: number
+    lastCumulativeUsage?: number
 }
 
 /** Default storage directory: $XDG_DATA_HOME/opencode/storage/plugin/acp */
@@ -207,6 +208,7 @@ export function saveSessionState(
         modelID: sessionState.modelID,
         hiddenMessageIds: Array.from(sessionState.hiddenMessageIds ?? []),
         lastUsedTokens: sessionState.lastUsedTokens,
+        lastCumulativeUsage: sessionState.lastCumulativeUsage,
     }
 
     const key = saveQueueKey(sessionState.sessionId, sessionState.storageDir)
@@ -287,13 +289,7 @@ export async function loadSessionState(
 
         const hasPruneMessages = state?.prune?.messages && typeof state.prune.messages === "object"
         const hasNudgeFormat = state?.nudges && typeof state.nudges === "object"
-        if (
-            !state ||
-            !state.prune ||
-            !hasPruneMessages ||
-            !state.stats ||
-            !hasNudgeFormat
-        ) {
+        if (!state || !state.prune || !hasPruneMessages || !state.stats || !hasNudgeFormat) {
             logger.warn("Invalid session state file, ignoring", {
                 sessionId: sessionId,
             })

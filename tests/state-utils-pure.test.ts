@@ -4,7 +4,9 @@ import {
     createPruneMessagesState,
     serializePruneMessagesState,
     loadPruneMessagesState,
+    resetOnCompaction,
 } from "../lib/state/utils"
+import { createSessionState } from "../lib/state"
 
 test("createPruneMessagesState returns initial state with empty maps/sets and counter=1", () => {
     const state = createPruneMessagesState()
@@ -14,6 +16,17 @@ test("createPruneMessagesState returns initial state with empty maps/sets and co
     assert.equal(state.blocksById.size, 0)
     assert.equal(state.activeBlockIds.size, 0)
     assert.equal(state.activeByAnchorMessageId.size, 0)
+})
+
+test("resetOnCompaction clears provider usage but keeps the cumulative baseline", () => {
+    const state = createSessionState()
+    state.lastUsedTokens = 42_000
+    state.lastCumulativeUsage = 500_000_000
+
+    resetOnCompaction(state)
+
+    assert.equal(state.lastUsedTokens, undefined)
+    assert.equal(state.lastCumulativeUsage, 500_000_000)
 })
 
 test("serializePruneMessagesState converts Maps to Records, Sets to Arrays", () => {

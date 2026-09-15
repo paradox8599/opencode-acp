@@ -401,6 +401,14 @@ export function getTierTokenUsage(state: SessionState): {
 
 export function resetOnCompaction(state: SessionState): void {
     state.toolParameters.clear()
+    // [FIX compaction usage baseline] The provider-reported request size
+    // describes the PRE-compaction context. Keeping it makes nudges and the
+    // budget guard treat the compacted session as full (observed: a state
+    // poisoned with 180M cumulative tokens kept firing "context full" nudges
+    // after compaction). Rebuild from content estimation until the next
+    // request reports fresh usage. `lastCumulativeUsage` is a monotonic
+    // counter and stays valid across compaction.
+    state.lastUsedTokens = undefined
     // [PATCH Bug 2] Preserve prune.messages (compression blocks) on compaction.
     // Only reset transient state. Compression blocks are still valid even after
     // opencode compacts — their summaries are still needed in context.

@@ -250,7 +250,7 @@ ACP 使用自己的配置文件，按以下顺序搜索：
 > **📖 完整参数参考：** 请查看 [CONFIGURATION.zh-CN.md](./CONFIGURATION.zh-CN.md)（中文）或 [CONFIGURATION.md](./CONFIGURATION.md)（英文），包含每个可配置参数的类型、默认值和详细说明。
 
 > [!IMPORTANT]
-> **禁用 OpenCode 的内置自动压缩。** ACP 自行处理上下文管理 — OpenCode 的压缩与 ACP 冲突，可能导致问题（消息重新展开、压缩状态丢失）。请在 `opencode.json` 中添加：
+> **OpenCode 的内置自动压缩：已兼容，但仍不建议开启。** ACP 现在能识别 compaction、重算 token 基线并继续工作 — 被 compaction 删除的消息所对应的压缩块会自动失效（不再生效）。仍存在的代价：compaction 会永久删除原始消息，ACP 的 `decompress` 无法再找回。想要完整的上下文管理能力，请禁用自动压缩：
 >
 > ```jsonc
 > {

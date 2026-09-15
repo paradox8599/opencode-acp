@@ -295,7 +295,7 @@ Each level overrides the previous, so project settings take priority over global
 > **📖 Full parameter reference:** See [CONFIGURATION.md](./CONFIGURATION.md) for a complete reference of every configurable parameter with type, default value, and description.
 
 > [!IMPORTANT]
-> **Disable OpenCode's built-in auto-compaction.** ACP handles context management itself — OpenCode's compaction conflicts with ACP and can cause issues (re-expanded messages, lost compression state). Add to your `opencode.json`:
+> **OpenCode's built-in auto-compaction: supported, but not recommended.** ACP detects compaction, re-baselines its token accounting, and keeps working — compression blocks whose messages were compacted away simply stop applying. The remaining cost: compaction permanently deletes the raw messages ACP would otherwise compress into restorable summaries, so `decompress` cannot bring them back. For full context management, disable auto-compaction:
 >
 > ```jsonc
 > {

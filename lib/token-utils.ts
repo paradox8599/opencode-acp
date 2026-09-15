@@ -6,6 +6,37 @@ const anthropicCountTokens = (_anthropicTokenizer.countTokens ??
     (_anthropicTokenizer as any).default?.countTokens) as typeof _anthropicTokenizer.countTokens
 import { getLastUserMessage } from "./messages/query"
 
+/**
+ * Absolute sanity ceiling for "current context size" values. Real context
+ * windows are ≤ 10M tokens today; anything larger is a mis-mapped number
+ * (e.g. session-cumulative usage) and must never drive nudge thresholds or
+ * the budget guard.
+ */
+export const MAX_PLAUSIBLE_CONTEXT_TOKENS = 10_000_000
+
+/**
+ * True when `value` can plausibly be the size of the current context:
+ * positive, under the absolute ceiling, and within the model's window when
+ * that window is known.
+ */
+export function isPlausibleContextTokens(state: SessionState, value: number): boolean {
+    if (!(value > 0)) return false
+    if (value > MAX_PLAUSIBLE_CONTEXT_TOKENS) return false
+    const limit = state.modelContextLimit
+    if (typeof limit === "number" && limit > 0 && value > limit) return false
+    return true
+}
+
+/**
+ * Provider-reported size of the latest request, when it is plausible.
+ * See `SessionState.lastUsedTokens` (delta of the session-cumulative V2
+ * `session.usage.updated` totals).
+ */
+export function getProviderUsedTokens(state: SessionState): number | undefined {
+    if (typeof state.lastUsedTokens !== "number") return undefined
+    return isPlausibleContextTokens(state, state.lastUsedTokens) ? state.lastUsedTokens : undefined
+}
+
 export function getCurrentTokenUsage(state: SessionState, messages: WithParts[]): number {
     for (let i = messages.length - 1; i >= 0; i--) {
         const msg = messages[i]
@@ -47,15 +78,21 @@ export function getCurrentTokenUsage(state: SessionState, messages: WithParts[])
     // V2 native messages carry no `tokens` field. The latest
     // provider-reported usage (session.usage.updated) is the real prompt size
     // including system prompt and tool schemas — prefer it over estimation.
-    if (typeof state.lastUsedTokens === "number" && state.lastUsedTokens > 0) {
-        return state.lastUsedTokens
+    // Implausible values (e.g. session-cumulative totals: 180M+ on a 1M
+    // window) are rejected here so a mis-mapped event can never drive nudges.
+    const providerUsed = getProviderUsedTokens(state)
+    if (providerUsed !== undefined) {
+        return providerUsed
     }
 
     // [FIX Bug 5] fallback: estimate from all content (text + tool outputs)
     // when no assistant message has token data (first turn or full compaction).
+    // [FIX perf] chars/4 estimator instead of the BPE tokenizer, which costs
+    // ~25ms/message and made a single large-history transform take tens of
+    // seconds (observed: ~50s on a 449-message session).
     let estimated = 0
     for (const m of messages) {
-        estimated += countAllMessageTokens(m)
+        estimated += estimateAllMessageTokensFast(m)
     }
     return estimated
 }

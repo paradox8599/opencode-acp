@@ -4,10 +4,11 @@ import type { PluginConfig } from "../config"
 import { Logger } from "../logger"
 import {
     COMPACTED_TOOL_OUTPUT_PLACEHOLDER,
-    countAllMessageTokens,
     countTokens,
+    estimateAllMessageTokensFast,
     extractCompletedToolOutput,
     getCurrentTokenUsage,
+    getProviderUsedTokens,
 } from "../token-utils"
 
 /**
@@ -56,15 +57,36 @@ export function resolveContextWindow(state: SessionState): number | undefined {
 /**
  * Estimate the input token count of the request about to be sent.
  *
- * Primary: the last assistant message's reported usage (input + cacheRead +
- * cacheWrite + output + reasoning — exactly what the model saw last turn plus
- * what it produced, which is now history) + the tokens of every message after
- * it (the new user message of this turn).
+ * Primary (V2): the provider-reported size of the last request (input + output
+ * + reasoning + cache — exactly what the model saw last turn plus what it
+ * produced) + the estimated tokens of every message appended after it. V1-style
+ * transcripts with per-message usage data are anchored on the last assistant
+ * that carries token data, matching `getCurrentTokenUsage`.
  *
- * Fallback (no assistant token data yet): full content estimate of all
- * messages + the cached system prompt estimate.
+ * Fallback (no usage data yet): full content estimate of all messages + the
+ * cached system prompt estimate.
  */
 export function estimateWireTokens(state: SessionState, messages: WithParts[]): number {
+    // V2: no message carries per-message usage, so the provider-reported size
+    // of the last request (delta of the session-cumulative usage event) is the
+    // anchor. Everything appended after the last assistant message is new
+    // input since that request.
+    const providerUsed = getProviderUsedTokens(state)
+    if (providerUsed !== undefined) {
+        let lastAssistant = -1
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].info.role === "assistant") {
+                lastAssistant = i
+                break
+            }
+        }
+        let additions = 0
+        for (let i = lastAssistant + 1; i < messages.length; i++) {
+            additions += estimateAllMessageTokensFast(messages[i])
+        }
+        return providerUsed + additions
+    }
+
     const base = getCurrentTokenUsage(state, messages)
     if (base > 0) {
         // Align with getCurrentTokenUsage: base is the usage of the LAST
@@ -84,7 +106,7 @@ export function estimateWireTokens(state: SessionState, messages: WithParts[]): 
         if (baseAssistant >= 0) {
             let additions = 0
             for (let i = baseAssistant + 1; i < messages.length; i++) {
-                additions += countAllMessageTokens(messages[i])
+                additions += estimateAllMessageTokensFast(messages[i])
             }
             return base + additions
         }
@@ -94,7 +116,7 @@ export function estimateWireTokens(state: SessionState, messages: WithParts[]): 
     }
 
     let total = 0
-    for (const m of messages) total += countAllMessageTokens(m)
+    for (const m of messages) total += estimateAllMessageTokensFast(m)
     return total + (state.systemPromptTokens ?? 0)
 }
 
@@ -195,9 +217,7 @@ export function enforceContextBudget(
         const prefix = c.content.slice(0, KEEP_PREFIX_CHARS)
         const suffix = c.content.slice(-KEEP_SUFFIX_CHARS)
         const truncated =
-            prefix +
-            `\n\n...${TRUNCATION_MARKER} — original ~${c.tokens} tokens]...\n\n` +
-            suffix
+            prefix + `\n\n...${TRUNCATION_MARKER} — original ~${c.tokens} tokens]...\n\n` + suffix
         // Content just over the 4000-char threshold: prefix and suffix
         // overlap and the marker line makes the "truncated" form LONGER.
         // Skip it (phase 2 may still clear it) instead of growing it.

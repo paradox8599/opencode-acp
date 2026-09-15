@@ -259,13 +259,23 @@ export interface SessionState {
      */
     hiddenMessageIds: Set<string>
     /**
-     * Provider-reported context usage from the latest model request
-     * (input + output + reasoning + cache), fed by the V2
-     * `session.usage.updated` event. V2 AI messages carry no `tokens` field,
-     * so this is the only source of real usage data for nudge thresholds.
-     * Transient (not persisted).
+     * Size of the latest model request as provider-reported usage
+     * (input + output + reasoning + cache.read/cache.write). V2 AI messages
+     * carry no `tokens` field, so this is the only source of real usage data
+     * for nudge thresholds. Persisted so a restarted process keeps a baseline.
+     *
+     * `session.usage.updated` reports SESSION-CUMULATIVE totals (observed:
+     * 180M+ tokens for a 1M-window session), so this field stores the delta
+     * between consecutive events — the last request's prompt + response size.
+     * See `lib/v2/usage.ts`.
      */
     lastUsedTokens?: number
+    /**
+     * Latest session-cumulative usage total from `session.usage.updated`,
+     * kept as the baseline for computing `lastUsedTokens` deltas. Persisted so
+     * the baseline survives process restarts.
+     */
+    lastCumulativeUsage?: number
     qualityGateRetryPending: boolean
     /**
      * Transient flag (NOT persisted): set to true after the "model reports no

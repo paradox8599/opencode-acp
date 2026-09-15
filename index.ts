@@ -16,6 +16,7 @@ import { startAutoUpdate } from "./lib/update"
 import { createAcpHost } from "./lib/v2/host"
 import { createV2ContextHandler } from "./lib/v2/context-handler"
 import { toV2Tool } from "./lib/v2/tools"
+import { applyUsageTotals, sumUsageTokens, type V2UsageTokens } from "./lib/v2/usage"
 import { ACP_VERSION } from "./lib/version"
 
 const plugin: Plugin.Plugin = {
@@ -29,7 +30,9 @@ const plugin: Plugin.Plugin = {
                 tui: {
                     showToast: (input) => {
                         const body = input.body ?? {}
-                        console.warn(`[opencode-acp] ${body.title ?? "Notice"}: ${body.message ?? ""}`)
+                        console.warn(
+                            `[opencode-acp] ${body.title ?? "Notice"}: ${body.message ?? ""}`,
+                        )
                     },
                 },
             },
@@ -66,6 +69,9 @@ const plugin: Plugin.Plugin = {
         // Provider-reported usage feeds the nudge thresholds: V2 native
         // messages carry no `tokens` field, so `session.usage.updated` is the
         // only real prompt-size signal (system prompt + tools included).
+        // The event reports SESSION-CUMULATIVE totals — lib/v2/usage.ts keeps
+        // the baseline and stores the per-request delta, rejecting values that
+        // cannot be a real context size.
         const eventAbort = new AbortController()
         void (async () => {
             try {
@@ -75,27 +81,14 @@ const plugin: Plugin.Plugin = {
                     if (!data || typeof data !== "object") continue
                     const record = data as { sessionID?: unknown; tokens?: unknown }
                     if (typeof record.sessionID !== "string") continue
-                    const tokens = record.tokens as
-                        | {
-                              input?: unknown
-                              output?: unknown
-                              reasoning?: unknown
-                              cache?: { read?: unknown; write?: unknown }
-                          }
-                        | undefined
-                    if (!tokens || typeof tokens !== "object") continue
-                    const total =
-                        numberOrZero(tokens.input) +
-                        numberOrZero(tokens.output) +
-                        numberOrZero(tokens.reasoning) +
-                        numberOrZero(tokens.cache?.read) +
-                        numberOrZero(tokens.cache?.write)
+                    if (!record.tokens || typeof record.tokens !== "object") continue
+                    const total = sumUsageTokens(record.tokens as V2UsageTokens)
                     if (total <= 0) continue
                     const state = registry.get(record.sessionID)
-                    if (state) {
-                        state.lastUsedTokens = total
-                        // Persist so the next process (a fresh `run` server)
-                        // starts with the previous request's real usage.
+                    if (!state) continue
+                    // Persist so a fresh `run` server keeps both the baseline
+                    // and the latest request's usage.
+                    if (applyUsageTotals(state, total)) {
                         saveSessionState(state, logger).catch(() => {})
                     }
                 }
@@ -237,10 +230,6 @@ const plugin: Plugin.Plugin = {
 }
 
 export default plugin
-
-function numberOrZero(value: unknown): number {
-    return typeof value === "number" && Number.isFinite(value) ? value : 0
-}
 
 async function detectBiliProxy(ctx: {
     catalog: { provider: { list(): Promise<unknown> } }

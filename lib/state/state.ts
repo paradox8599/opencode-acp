@@ -245,6 +245,7 @@ export function createSessionState(): SessionState {
         storageDir: undefined,
         hiddenMessageIds: new Set<string>(),
         lastUsedTokens: undefined,
+        lastCumulativeUsage: undefined,
         qualityGateRetryPending: false,
         noContextLimitWarned: false,
     }
@@ -291,6 +292,7 @@ export function resetSessionState(state: SessionState): void {
     state.storageDir = undefined
     state.hiddenMessageIds = new Set<string>()
     state.lastUsedTokens = undefined
+    state.lastCumulativeUsage = undefined
     state.qualityGateRetryPending = false
     state.noContextLimitWarned = false
 }
@@ -459,6 +461,10 @@ export async function ensureSessionInitialized(
     state.lastUsedTokens =
         typeof persisted.lastUsedTokens === "number" && persisted.lastUsedTokens > 0
             ? persisted.lastUsedTokens
+            : undefined
+    state.lastCumulativeUsage =
+        typeof persisted.lastCumulativeUsage === "number" && persisted.lastCumulativeUsage > 0
+            ? persisted.lastCumulativeUsage
             : undefined
     const applied = applyPendingCompressionDurations(state)
     if (applied > 0) {

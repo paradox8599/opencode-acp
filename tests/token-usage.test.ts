@@ -191,6 +191,43 @@ test("getCurrentTokenUsage returns 0 until a fresh assistant follows compaction"
     assert.equal(getCurrentTokenUsage(state, messages), 0)
 })
 
+test("getCurrentTokenUsage ignores implausible provider usage and falls back to content", () => {
+    const sessionID = "ses_implausible_provider_usage"
+    const messages: WithParts[] = [
+        {
+            info: {
+                id: "msg-user",
+                role: "user",
+                sessionID,
+                agent: "assistant",
+                time: { created: 1 },
+            } as WithParts["info"],
+            parts: [textPart("msg-user", sessionID, "msg-user-part", "x".repeat(400))],
+        },
+    ]
+    const state = createSessionState()
+    state.modelContextLimit = 1_000_000
+    state.lastUsedTokens = 182_822_537
+
+    // Poisoned cumulative total (> window) is rejected → chars/4 estimate: 400/4.
+    assert.equal(getCurrentTokenUsage(state, messages), 100)
+})
+
+test("getCurrentTokenUsage rejects absurd provider usage without a known window", () => {
+    const state = createSessionState()
+    state.lastUsedTokens = 182_822_537
+
+    assert.equal(getCurrentTokenUsage(state, []), 0)
+})
+
+test("getCurrentTokenUsage uses plausible provider usage", () => {
+    const state = createSessionState()
+    state.modelContextLimit = 1_000_000
+    state.lastUsedTokens = 43_000
+
+    assert.equal(getCurrentTokenUsage(state, []), 43_000)
+})
+
 test("isContextOverLimits ignores stale summary totals and resumes with fresh reported totals", () => {
     const messages = buildCompactedMessages()
     const state = createSessionState()
@@ -305,12 +342,7 @@ function buildOutputZeroAssistantMessage(): WithParts {
             },
         } as WithParts["info"],
         parts: [
-            textPart(
-                "msg-assistant-output-zero",
-                sessionID,
-                "msg-assistant-output-zero-part",
-                "",
-            ),
+            textPart("msg-assistant-output-zero", sessionID, "msg-assistant-output-zero-part", ""),
         ],
     }
 }
@@ -400,8 +432,5 @@ test("getCurrentTokenUsage fallback counts tool outputs not just text", () => {
     // Tool output "total 100\ndrwxr-xr-x ..." adds significant tokens
     // that the old text-only fallback would have missed entirely
     const textOnlyTokens = Math.ceil("Short text".length / 4)
-    assert.ok(
-        usage > textOnlyTokens,
-        "fallback should count tool outputs, not just text parts",
-    )
+    assert.ok(usage > textOnlyTokens, "fallback should count tool outputs, not just text parts")
 })
