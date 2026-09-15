@@ -114,9 +114,9 @@ export interface CompressConfig {
     maxVisibleSegments: number
     keepEmbedMaxChars: number
     lastSegmentSoftBlock?: boolean
-    /** Protect the last N visible messages from compression (default: 20). */
+    /** Protect the last N visible messages from compression (default: 5). */
     preserveRecentMessages?: number
-    /** Protect the last ~N tokens of visible messages (default: 20000). */
+    /** Protect the last ~N tokens of visible messages (default: 5000). */
     preserveRecentTokens?: number
     /** Always protect the most recent user message (default: true). */
     preserveLastUserMessage?: boolean

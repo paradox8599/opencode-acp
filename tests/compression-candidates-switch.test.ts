@@ -6,8 +6,9 @@
  *   same test sharing one SessionState.
  * - Side-effect assertions: asserts both nudge text presence AND
  *   lastPerMessageNudgeTokens after each call.
- * - Production config: the growth-cycle test uses preserveRecentMessages: 20
- *   (production default).
+ * - Preserve-recent coverage: the growth-cycle test uses an explicit
+ *   preserveRecentMessages: 20 zone (larger than the 5-message production
+ *   default), so the #207 nothingToCompress shape is exercised.
  * - Growth cycle: baseline → growth → nudge → new baseline → growth → nudge.
  */
 import assert from "node:assert/strict"
@@ -221,7 +222,7 @@ test("opt-in (candidates on) acp_status scope:uncompressed shows candidates", ()
     assert.match(status, /^\s+(MICRO|EPISODE)\s/m)
 })
 
-test("growth cycle with preserveRecentMessages=20 (production config): off-mode nudges fire, baseline resets, and fire again", () => {
+test("growth cycle with preserveRecentMessages=20 (explicit preserve zone): off-mode nudges fire, baseline resets, and fire again", () => {
     // >20 messages so the preserve-recent-20 window still leaves a
     // compressible head — the production nothingToCompress scenario (#207).
     const messages: WithParts[] = [textMessage("u0", "user", "start")]

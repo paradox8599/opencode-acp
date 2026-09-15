@@ -221,7 +221,8 @@ test("isContextOverLimits: known model limit takes precedence over fallback", ()
 
 test("growth cycle: fallback drives the nudge across turns without a known limit (#346, §5.7)", () => {
     // Production shape: model limit unknown (spawn+resume), fallback 128K,
-    // preserveRecentMessages 20 (production default). Thresholds: min 50% of
+    // preserveRecentMessages 20 (explicit zone, larger than the 5-message
+    // production default). Thresholds: min 50% of
     // 128K = 64_000, max 80% = 102_400. Turn anchors are only added when
     // overMinLimit (and NOT overMaxLimit — that branch takes the
     // context-limit anchors) — pre-fix (no fallback) overMinLimit was never

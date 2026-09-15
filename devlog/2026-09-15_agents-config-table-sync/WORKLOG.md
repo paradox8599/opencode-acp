@@ -57,5 +57,5 @@ grep -n "const defaultConfig" -A 85 lib/config.ts
 
 ## 7. Follow-ups
 
-- [ ] §5.7.1 claims "production default: 20" for `compress.preserveRecentMessages`; actual default is `5` (`lib/config.ts:357`). `lib/config.ts:117` interface comment also says 20, and `lib/compress/pipeline.ts:459` still falls back to `?? 20` at one call site. Needs a separate decision: fix docs + stray fallback, or raise the default.
+- [x] §5.7.1 claimed "production default: 20" for `compress.preserveRecentMessages`; actual default is `5` (`lib/config.ts:357`). Resolved in `devlog/2026-09-15_preserve-recent-default-align/` — comments/fallback/tests now state the real 5 / 5000 defaults.
 - [ ] §2.5 storage-path table: `storagePath` (XDG_DATA_HOME-aware) is now configurable; table mentions only the default path.

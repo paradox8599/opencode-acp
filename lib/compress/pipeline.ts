@@ -456,7 +456,7 @@ export function checkProtectedRange(
     if (dangerous) return null
 
     const sample = coveredProtected.slice(0, 3).join(", ")
-    const nMsgs = ctx.config.compress.preserveRecentMessages ?? 20
+    const nMsgs = ctx.config.compress.preserveRecentMessages ?? 5
     const nToks = ctx.config.compress.preserveRecentTokens ?? 5000
     return new Error(
         `This range includes ${coveredProtected.length} protected recent message(s) (${sample}), ` +
