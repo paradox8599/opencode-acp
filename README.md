@@ -8,6 +8,13 @@ The model decides <em>when</em> and <em>what</em> to compress — not a hard lim
 <strong>200K tokens is enough.</strong>
 </p>
 
+> **Personal-use fork.** This repository is a personal fork of
+> [ranxianglei/opencode-acp](https://github.com/ranxianglei/opencode-acp) — the original upstream project —
+> maintained by [paradox8599](https://github.com/paradox8599) for my own use, mainly to run ACP on the
+> OpenCode **V2** plugin API. It **may be abandoned at any time** once upstream supports V2; upstream stays
+> the reference implementation. Install this fork with `plugins: ["github:paradox8599/opencode-acp"]`.
+> Issues/PRs are welcome, but support is best-effort.
+
 ---
 
 

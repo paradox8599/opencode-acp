@@ -8,6 +8,8 @@
 <strong>20 万 token 足矣。</strong>
 </p>
 
+> **个人自用 fork**：本仓库是 [ranxianglei/opencode-acp](https://github.com/ranxianglei/opencode-acp)（原仓库）的个人分支，由 [paradox8599](https://github.com/paradox8599) 主要为了在 OpenCode **V2** 插件 API 上自用而维护。等原作者支持 V2 后，本 fork 随时可能停止维护（弃坑）；原仓库始终是参考实现。安装本 fork：`plugins: ["github:paradox8599/opencode-acp"]`。欢迎提 issue/PR，但支持力度随缘。
+
 ---
 
 
