@@ -87,7 +87,10 @@ export function importV2Messages(
                 meta.originalResultText = toolResultText(part.result)
                 meta.originalResultValue = part.result
                 partMeta.set(call, meta)
-                call.state = completedState(call.state ?? { status: "pending", input: undefined }, part.result)
+                call.state = completedState(
+                    call.state ?? { status: "pending", input: undefined },
+                    part.result,
+                )
                 folded = true
             }
             if (!folded) passThrough.push({ message, afterId: lastImportedId })
@@ -113,7 +116,10 @@ export function importV2Messages(
                     meta.originalResultText = toolResultText(part.result)
                     meta.originalResultValue = part.result
                     partMeta.set(call, meta)
-                    call.state = completedState(call.state ?? { status: "pending", input: undefined }, part.result)
+                    call.state = completedState(
+                        call.state ?? { status: "pending", input: undefined },
+                        part.result,
+                    )
                 }
                 continue
             }
@@ -187,9 +193,7 @@ function buildInternalMessage(
     const id = typeof message.id === "string" ? message.id : ""
     const isCheckpoint =
         message.role === "user" &&
-        message.content.some(
-            (part) => isTextPart(part) && part.text.includes(CHECKPOINT_MARKER),
-        )
+        message.content.some((part) => isTextPart(part) && part.text.includes(CHECKPOINT_MARKER))
     // OpenCode's compaction checkpoint replaces earlier history. Mirror the V1
     // assistant-summary shape so the pipeline's compaction bookkeeping works.
     const role: WithParts["info"]["role"] = isCheckpoint
@@ -201,7 +205,15 @@ function buildInternalMessage(
         id,
         sessionID: context.sessionID,
         role,
-        time: { created: toMillis((message as { time?: unknown }).time, now) },
+        // Compaction checkpoints get no fabricated timestamp: AI messages carry
+        // no per-message times, so the old `now` fallback made `lastCompaction`
+        // advance on every request (every turn looked like a new compaction,
+        // which then made every message look compacted). 0 marks "not a usable
+        // boundary" — transcript paths reconcile the real value via
+        // syncCompactionBoundary.
+        time: {
+            created: isCheckpoint ? 0 : toMillis((message as { time?: unknown }).time, now),
+        },
         agent: context.agent,
         model: context.model
             ? {
@@ -265,8 +277,7 @@ function buildInternalPart(
     const internal: AcpPart = { type: part.type }
     if (part.cache !== undefined) internal.cache = part.cache
     if (part.providerMetadata !== undefined) internal.providerMetadata = part.providerMetadata
-    if (part.metadata !== undefined)
-        internal.metadata = part.metadata as Record<string, unknown>
+    if (part.metadata !== undefined) internal.metadata = part.metadata as Record<string, unknown>
     for (const [key, value] of Object.entries(part)) {
         if (key === "type" || key in internal) continue
         internal[key] = value
@@ -326,9 +337,7 @@ function rebuildAssistantMessage(
 
     const output: V2Message[] = []
     if (content.length > 0) {
-        const base: V2Message = source
-            ? { ...source, content }
-            : { role: "assistant", content }
+        const base: V2Message = source ? { ...source, content } : { role: "assistant", content }
         output.push(base)
     }
     output.push(...toolMessages)

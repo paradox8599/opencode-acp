@@ -98,6 +98,57 @@ export function findLastCompactionTimestamp(messages: WithParts[]): number {
     return 0
 }
 
+/**
+ * Newest compaction checkpoint in the list: the harness summary message that
+ * replaced earlier history (role "assistant" + `summary: true`).
+ */
+export function findLastCompactionCheckpoint(messages: WithParts[]): WithParts | undefined {
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const msg = messages[i]
+        if (!isMessageWithInfo(msg)) {
+            continue
+        }
+        if (msg.info.role === "assistant" && msg.info.summary === true) {
+            return msg
+        }
+    }
+    return undefined
+}
+
+/**
+ * Reconcile `state.lastCompaction` with a transcript-derived checkpoint.
+ *
+ * Only checkpoints with a real timestamp (`created > 0`) are trusted. The V2
+ * AI-message path zeroes the checkpoint's `created` (lib/v2/ai-adapter.ts)
+ * because AI messages carry no per-message times; if that synthetic value were
+ * used, the boundary would advance to "now" on every request and every message
+ * would look compacted.
+ *
+ * This also repairs boundaries poisoned by the old time-based detection
+ * (stored value newer than the real checkpoint) and keeps
+ * `lastCompactionCheckpointId` in sync.
+ *
+ * Returns true when the boundary changed.
+ */
+export function syncCompactionBoundary(state: SessionState, messages: WithParts[]): boolean {
+    const checkpoint = findLastCompactionCheckpoint(messages)
+    if (!checkpoint) return false
+
+    const created = checkpoint.info.time?.created ?? 0
+    if (!(created > 0)) return false
+
+    let changed = false
+    if (checkpoint.info.id !== "" && checkpoint.info.id !== state.lastCompactionCheckpointId) {
+        state.lastCompactionCheckpointId = checkpoint.info.id
+        changed = true
+    }
+    if (state.lastCompaction !== created) {
+        state.lastCompaction = created
+        changed = true
+    }
+    return changed
+}
+
 export function countTurns(state: SessionState, messages: WithParts[]): number {
     let turnCount = 0
     for (const msg of messages) {

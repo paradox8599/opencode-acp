@@ -20,6 +20,8 @@ import { rebuildCompressionState, restoreForkCompressionState } from "./rebuild"
 import {
     getSessionParentId,
     findLastCompactionTimestamp,
+    findLastCompactionCheckpoint,
+    syncCompactionBoundary,
     countTurns,
     resetOnCompaction,
     createPruneMessagesState,
@@ -31,18 +33,33 @@ import { parseMessageRef, formatMessageRef } from "../message-ids"
 /**
  * Per-turn state update (compaction detection + turn count). Extracted from the
  * old `checkSession`; session-switch + init now live in SessionStateRegistry.
+ *
+ * Compaction detection is IDENTITY-based: a checkpoint's id only changes when
+ * a new compaction really happened. The old timestamp comparison used the
+ * checkpoint's `created`, which the V2 AI-message path used to fabricate from
+ * "now" (AI messages carry no times) — so every request re-fired
+ * "Detected compaction", resetting nudges, message refs, the tool cache and
+ * the usage baseline once per turn.
  */
 export async function updatePerTurnState(
     state: SessionState,
     logger: Logger,
     messages: WithParts[],
 ): Promise<void> {
-    const lastCompactionTimestamp = findLastCompactionTimestamp(messages)
-    if (lastCompactionTimestamp > state.lastCompaction) {
-        state.lastCompaction = lastCompactionTimestamp
+    const checkpoint = findLastCompactionCheckpoint(messages)
+    const checkpointId = checkpoint?.info.id ?? ""
+    if (checkpointId !== "" && checkpointId !== state.lastCompactionCheckpointId) {
+        state.lastCompactionCheckpointId = checkpointId
         resetOnCompaction(state)
+        // Only a transcript-derived checkpoint carries a real timestamp; the
+        // AI path zeroes it and leaves the boundary to syncCompactionBoundary.
+        const created = checkpoint?.info.time?.created ?? 0
+        if (created > 0) {
+            state.lastCompaction = created
+        }
         logger.info("Detected compaction - reset stale state", {
-            timestamp: lastCompactionTimestamp,
+            checkpointId,
+            timestamp: created,
         })
 
         saveSessionState(state, logger).catch((error) => {
@@ -183,6 +200,12 @@ export class SessionStateRegistry {
                 error: err.message,
             })
         }
+        // Transcript-derived callers (tools, /acp commands) reconcile a stale
+        // boundary even for an already-initialized session. AI-path callers are
+        // a no-op here — their checkpoints carry no trusted timestamp.
+        if (syncCompactionBoundary(state, messages)) {
+            saveSessionState(state, this.logger).catch(() => {})
+        }
         return state
     }
 
@@ -237,6 +260,7 @@ export function createSessionState(): SessionState {
             nextRef: 1,
         },
         lastCompaction: 0,
+        lastCompactionCheckpointId: undefined,
         currentTurn: 0,
         modelContextLimit: undefined,
         modelProviderID: undefined,
@@ -284,6 +308,7 @@ export function resetSessionState(state: SessionState): void {
         nextRef: 1,
     }
     state.lastCompaction = 0
+    state.lastCompactionCheckpointId = undefined
     state.currentTurn = 0
     state.modelContextLimit = undefined
     state.modelProviderID = undefined
@@ -448,6 +473,16 @@ export async function ensureSessionInitialized(
     if (persistedAny._persistedLastCompaction !== undefined) {
         state.lastCompaction = Math.max(state.lastCompaction, persistedAny._persistedLastCompaction)
     }
+    if (
+        typeof persisted.lastCompactionCheckpointId === "string" &&
+        persisted.lastCompactionCheckpointId !== ""
+    ) {
+        state.lastCompactionCheckpointId = persisted.lastCompactionCheckpointId
+    }
+    // Reconcile with a transcript-derived checkpoint. Repairs boundaries that
+    // the old time-based detection advanced to "now" (which made every message
+    // look compacted); no-op when the input is AI-path messages.
+    syncCompactionBoundary(state, messages)
     if (typeof persisted.modelContextLimit === "number" && persisted.modelContextLimit > 0) {
         state.modelContextLimit = persisted.modelContextLimit
         // Restore the identity pair together with the limit (persisted as a

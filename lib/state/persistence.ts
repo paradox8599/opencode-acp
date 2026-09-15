@@ -58,6 +58,8 @@ export interface PersistedSessionState {
     lastUpdated: string
     messageIds?: PersistedMessageIds
     lastCompaction?: number
+    /** Durable id of the compaction checkpoint `lastCompaction` corresponds to. */
+    lastCompactionCheckpointId?: string
     modelContextLimit?: number
     modelProviderID?: string
     modelID?: string
@@ -203,6 +205,7 @@ export function saveSessionState(
             nextRef: sessionState.messageIds.nextRef,
         },
         lastCompaction: sessionState.lastCompaction,
+        lastCompactionCheckpointId: sessionState.lastCompactionCheckpointId,
         modelContextLimit: sessionState.modelContextLimit,
         modelProviderID: sessionState.modelProviderID,
         modelID: sessionState.modelID,

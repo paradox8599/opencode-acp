@@ -227,6 +227,13 @@ export interface SessionState {
     toolIdList: string[]
     messageIds: MessageIdState
     lastCompaction: number
+    /**
+     * Durable id of the compaction checkpoint `lastCompaction` corresponds to.
+     * Compaction detection is identity-based (a new id == a real compaction):
+     * V2 AI messages carry no timestamps, so a timestamp comparison re-fired on
+     * every request. See `updatePerTurnState` (lib/state/state.ts).
+     */
+    lastCompactionCheckpointId?: string
     currentTurn: number
     modelContextLimit: number | undefined
     /** [FIX #312 follow-up] Identity of the model `modelContextLimit` was recorded for. Written together with the limit by the system hook; lets the messages hook detect a stale limit when the catalog misses. */

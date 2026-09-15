@@ -77,9 +77,7 @@ test("pruning an assistant message removes its folded tool result", () => {
     const imported = importV2Messages(
         [
             user("msg_1", "hi"),
-            assistant("msg_2", [
-                { type: "tool-call", id: "call_1", name: "read", input: {} },
-            ]),
+            assistant("msg_2", [{ type: "tool-call", id: "call_1", name: "read", input: {} }]),
             toolResult("call_1", "read", "file contents"),
             user("msg_3", "next"),
         ],
@@ -189,9 +187,7 @@ test("error tool results import as errored tool parts", () => {
     const imported = importV2Messages(
         [
             user("msg_1", "go"),
-            assistant("msg_2", [
-                { type: "tool-call", id: "call_1", name: "read", input: {} },
-            ]),
+            assistant("msg_2", [{ type: "tool-call", id: "call_1", name: "read", input: {} }]),
             {
                 role: "tool",
                 content: [
@@ -232,4 +228,7 @@ test("compaction checkpoints become internal assistant summaries", () => {
     assert.equal(imported.messages.length, 1)
     assert.equal(imported.messages[0]!.info.role, "assistant")
     assert.equal(imported.messages[0]!.info.summary, true)
+    // AI messages carry no per-message timestamps. The checkpoint must not get
+    // a fabricated "now" — that made lastCompaction advance every request.
+    assert.equal(imported.messages[0]!.info.time.created, 0)
 })
