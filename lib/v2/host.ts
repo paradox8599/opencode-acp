@@ -25,6 +25,8 @@ export interface V2HostContext {
         synthetic(input: {
             sessionID: string
             text: string
+            /** Human-readable row text. The V2 TUI only renders synthetic rows when this is non-empty. */
+            description?: string
             resume?: boolean
             metadata?: Record<string, JsonValue>
         }): Promise<unknown>
@@ -79,6 +81,11 @@ export function createAcpHost(
             const result = await ctx.session.synthetic({
                 sessionID,
                 text,
+                // Display text. The V2 TUI drops synthetic rows whose
+                // `description` is empty (routes/session/rows.ts) and renders
+                // `description`, not `text` — without it the write is
+                // persisted but invisible.
+                description: text,
                 resume: false,
                 metadata: { acp: { kind } },
             })

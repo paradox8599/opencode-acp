@@ -31,7 +31,7 @@ interface FakeContext {
     aiHooks: Map<string, (event: any) => unknown>
     tools: Array<{ name: string; description: string; input: unknown }>
     commands: Array<{ name: string; description?: string; execute: (input: any) => Promise<void> }>
-    synthetics: Array<{ sessionID: string; text: string; metadata?: unknown }>
+    synthetics: Array<{ sessionID: string; text: string; description?: string; metadata?: unknown }>
     sessionInfo: Record<string, unknown>
 }
 
@@ -66,7 +66,12 @@ function makeContext(options: {
             },
             context: async () => [],
             get: async () => fake.sessionInfo,
-            synthetic: async (input: { sessionID: string; text: string; metadata?: unknown }) => {
+            synthetic: async (input: {
+                sessionID: string
+                text: string
+                description?: string
+                metadata?: unknown
+            }) => {
                 fake.synthetics.push(input)
                 return { id: `msg_synth_${fake.synthetics.length}` }
             },
@@ -279,4 +284,9 @@ test("command execute writes model-invisible synthetic output", async () => {
     assert.equal(fake.synthetics.length, 1, "command output must be written as a synthetic message")
     assert.equal(fake.synthetics[0]!.sessionID, "ses_cmd")
     assert.ok(fake.synthetics[0]!.text.includes("/acp"), "help output must list the commands")
+    assert.equal(
+        fake.synthetics[0]!.description,
+        fake.synthetics[0]!.text,
+        "synthetic output needs a description — the V2 TUI hides rows without one",
+    )
 })
