@@ -15,6 +15,7 @@ import { findBiliProxyProviders } from "./lib/bili-proxy"
 import { startAutoUpdate } from "./lib/update"
 import { createAcpHost } from "./lib/v2/host"
 import { createV2ContextHandler } from "./lib/v2/context-handler"
+import { withHallucinationFilter } from "./lib/v2/hallucination-filter"
 import { toV2Tool } from "./lib/v2/tools"
 import { applyUsageTotals, sumUsageTokens, type V2UsageTokens } from "./lib/v2/usage"
 import { ACP_VERSION } from "./lib/version"
@@ -111,6 +112,18 @@ const plugin: Plugin.Plugin = {
             )
             return
         }
+
+        // Model output hygiene: the model sometimes echoes the dcp-message-id
+        // tags it sees in its context into its own reply (with an invented
+        // token count). V1 stripped those in `experimental.text.complete`; V2
+        // has no such hook, so the same cleanup runs on the model stream —
+        // before the harness persists or displays the text. See
+        // lib/v2/hallucination-filter.ts.
+        await ctx.aisdk.hook("language", (event) => {
+            if (event.language) {
+                event.language = withHallucinationFilter(event.language)
+            }
+        })
 
         if (config.compress.permission === "ask") {
             logger.warn(

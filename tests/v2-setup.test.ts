@@ -28,6 +28,7 @@ const { default: plugin } = await import("../index")
 
 interface FakeContext {
     hooks: Map<string, (event: any) => unknown>
+    aiHooks: Map<string, (event: any) => unknown>
     tools: Array<{ name: string; description: string; input: unknown }>
     commands: Array<{ name: string; description?: string; execute: (input: any) => Promise<void> }>
     synthetics: Array<{ sessionID: string; text: string; metadata?: unknown }>
@@ -40,6 +41,7 @@ function makeContext(options: {
 }): { ctx: any; fake: FakeContext } {
     const fake: FakeContext = {
         hooks: new Map(),
+        aiHooks: new Map(),
         tools: [],
         commands: [],
         synthetics: [],
@@ -98,6 +100,12 @@ function makeContext(options: {
                 return { dispose: async () => {} }
             },
         },
+        aisdk: {
+            hook: async (name: string, callback: (event: any) => unknown) => {
+                fake.aiHooks.set(name, callback)
+                return { dispose: async () => {} }
+            },
+        },
     }
 
     return { ctx, fake }
@@ -124,6 +132,31 @@ test("setup registers context hook, ACP tools and commands", async () => {
         ["acp", "dcp"],
         "the /acp command plus /dcp alias must be registered",
     )
+
+    const languageHook = fake.aiHooks.get("language")
+    assert.ok(languageHook, "the language hook (hallucination filter) must be registered")
+    const language = {
+        specificationVersion: "v3",
+        provider: "test",
+        modelId: "model",
+        supportedUrls: {},
+        doGenerate: async () => undefined,
+        doStream: async () => ({
+            stream: new ReadableStream({ start: (controller) => controller.close() }),
+        }),
+    }
+    const languageEvent: any = { model: {}, sdk: {}, options: {}, language }
+    await languageHook(languageEvent)
+    assert.notEqual(
+        languageEvent.language,
+        language,
+        "the language hook must wrap the resolved model",
+    )
+    assert.equal(
+        languageEvent.language.modelId,
+        "model",
+        "the wrapped model must keep the identity fields",
+    )
     for (const tool of fake.tools) {
         assert.ok(tool.description.length > 0, `${tool.name} must carry a description`)
         assert.ok(tool.input, `${tool.name} must carry an input schema`)
@@ -144,6 +177,7 @@ test("setup stays off when a /bili/ proxy provider is configured", async () => {
     await plugin.setup(ctx)
 
     assert.equal(fake.hooks.size, 0, "no hooks may be registered behind the bili proxy")
+    assert.equal(fake.aiHooks.size, 0, "no language hook may be registered behind the bili proxy")
     assert.equal(fake.tools.length, 0, "no tools may be registered behind the bili proxy")
     assert.equal(fake.commands.length, 0, "no commands may be registered behind the bili proxy")
 })
@@ -155,6 +189,10 @@ test('compress.permission "deny" registers no tools or commands', async () => {
     await plugin.setup(ctx)
 
     assert.equal(fake.hooks.size, 0)
+    assert.ok(
+        fake.aiHooks.has("language"),
+        "the language hook stays active when only compression tools are denied",
+    )
     assert.equal(fake.tools.length, 0)
     assert.equal(fake.commands.length, 0)
 })
@@ -172,9 +210,7 @@ test("context hook injects the system prompt and message-id tags", async () => {
         agent: "build",
         model: { providerID: "test", id: "model" },
         system: [{ type: "text", text: "base system prompt" }],
-        messages: [
-            { id: "msg_1", role: "user", content: [{ type: "text", text: "hello world" }] },
-        ],
+        messages: [{ id: "msg_1", role: "user", content: [{ type: "text", text: "hello world" }] }],
         tools: { compress: {}, other: {} },
     }
 
@@ -210,20 +246,21 @@ test("sub-agent sessions lose the ACP tools when allowSubAgents is false", async
         agent: "build",
         model: { providerID: "test", id: "model" },
         system: [{ type: "text", text: "base system prompt" }],
-        messages: [
-            { id: "msg_1", role: "user", content: [{ type: "text", text: "child task" }] },
-        ],
-        tools: { compress: {}, decompress: {}, search_context: {}, acp_status: {}, acp_context_recap: {}, other: {} },
+        messages: [{ id: "msg_1", role: "user", content: [{ type: "text", text: "child task" }] }],
+        tools: {
+            compress: {},
+            decompress: {},
+            search_context: {},
+            acp_status: {},
+            acp_context_recap: {},
+            other: {},
+        },
     }
 
     await hook(event)
 
     for (const name of ACP_TOOLS) {
-        assert.equal(
-            name in event.tools,
-            false,
-            `${name} must be hidden from sub-agent requests`,
-        )
+        assert.equal(name in event.tools, false, `${name} must be hidden from sub-agent requests`)
     }
     assert.ok("other" in event.tools, "unrelated tools must survive")
     assert.equal(event.system.length, 1, "sub-agent requests skip the ACP system prompt")
