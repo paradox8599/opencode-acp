@@ -34,13 +34,10 @@
     ],
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/ranxianglei/opencode-acp.git"
+        "url": "git+https://github.com/paradox8599/opencode-acp.git"
     },
-    "bugs": {
-        "url": "https://github.com/ranxianglei/opencode-acp/issues"
-    },
-    "homepage": "https://github.com/ranxianglei/opencode-acp#readme",
-    "author": "ranxianglei",
+    "homepage": "https://github.com/paradox8599/opencode-acp#readme",
+    "author": "paradox8599",
     "license": "AGPL-3.0-or-later",
     "dependencies": {
         "@anthropic-ai/tokenizer": "^0.0.4",

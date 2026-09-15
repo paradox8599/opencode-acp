@@ -10,7 +10,7 @@ Every development iteration (bug fix, feature, refactor, infra) gets its own fol
 
 Folder name: `YYYY-MM-DD_short-title`
 
-- Must match the branch name (e.g., branch `2026-05-18_msgid-expansion` → folder `2026-05-18_msgid-expansion/`)
+- Describes the change (e.g., `2026-05-18_msgid-expansion/`) — this fork works directly on the current branch, so there is no branch name to match
 - Use lowercase, hyphens for spaces, no special characters
 - Date is the iteration start date
 
@@ -18,28 +18,27 @@ Folder name: `YYYY-MM-DD_short-title`
 
 Every devlog entry MUST include at minimum:
 
-| File | Purpose | When to fill |
-|------|---------|--------------|
-| `REQ.md` | Problem statement, acceptance criteria, constraints | **BEFORE** implementation |
-| `WORKLOG.md` | Commits, key files, test results, lessons learned | **DURING/AFTER** implementation |
+| File         | Purpose                                             | When to fill                    |
+| ------------ | --------------------------------------------------- | ------------------------------- |
+| `REQ.md`     | Problem statement, acceptance criteria, constraints | **BEFORE** implementation       |
+| `WORKLOG.md` | Commits, key files, test results, lessons learned   | **DURING/AFTER** implementation |
 
 ## Optional Files
 
-| File | When to include |
-|------|----------------|
+| File        | When to include                                                              |
+| ----------- | ---------------------------------------------------------------------------- |
 | `DESIGN.md` | Required for changes affecting architecture, data flow, or module boundaries |
-| `NOTES.md` | Ad-hoc notes, investigation logs, debugging traces |
-| `REVIEW.md` | Code review findings (if significant enough to preserve) |
+| `NOTES.md`  | Ad-hoc notes, investigation logs, debugging traces                           |
+| `REVIEW.md` | Code review findings (if significant enough to preserve)                     |
 
 ## Rules
 
-1. **Every PR MUST have a corresponding devlog entry.** No exceptions.
-2. The devlog folder name MUST match the branch name.
-3. At minimum, `REQ.md` and `WORKLOG.md` MUST be present.
-4. `DESIGN.md` is required for any change affecting architecture, data flow, or module boundaries.
-5. Fill `REQ.md` **BEFORE** implementation (it functions like a ticket).
-6. Fill `WORKLOG.md` **DURING** and **AFTER** implementation.
-7. Commit devlog files alongside code changes — not as a separate afterthought.
+1. **Every change MUST have a corresponding devlog entry.** No exceptions.
+2. At minimum, `REQ.md` and `WORKLOG.md` MUST be present.
+3. `DESIGN.md` is required for any change affecting architecture, data flow, or module boundaries.
+4. Fill `REQ.md` **BEFORE** implementation (it functions like a ticket).
+5. Fill `WORKLOG.md` **DURING** and **AFTER** implementation.
+6. Commit devlog files alongside code changes — not as a separate afterthought.
 
 ## Templates
 

@@ -14,28 +14,31 @@ ACP is a hardened fork of [DCP](https://github.com/Tarquinen/opencode-dynamic-co
 
 ### 1.2 Tech Stack
 
-| Category           | Technology                                                   |
-| ------------------ | ------------------------------------------------------------ |
-| Language           | TypeScript (strict, ESM)                                     |
-| Runtime            | Node.js                                                      |
+| Category           | Technology                                                           |
+| ------------------ | -------------------------------------------------------------------- |
+| Language           | TypeScript (strict, ESM)                                             |
+| Runtime            | Node.js                                                              |
 | Build              | None — source-direct entry (`index.ts`); `tsc --noEmit` for checking |
-| Test Runner        | Node.js built-in: `node --import tsx --test tests/*.test.ts` |
-| Package Manager    | npm                                                          |
-| Linting/Formatting | Prettier                                                     |
-| Plugin SDK         | `@opencode/plugin` 2.0.3 (devDependency; OpenCode V2 plugin API) |
-| Tokenizer          | `@anthropic-ai/tokenizer`                                    |
-| Config Parsing     | `jsonc-parser`                                               |
-| Validation         | `zod`                                                        |
+| Test Runner        | Node.js built-in: `node --import tsx --test tests/*.test.ts`         |
+| Package Manager    | npm                                                                  |
+| Linting/Formatting | Prettier                                                             |
+| Plugin SDK         | `@opencode/plugin` 2.0.3 (devDependency; OpenCode V2 plugin API)     |
+| Tokenizer          | `@anthropic-ai/tokenizer`                                            |
+| Config Parsing     | `jsonc-parser`                                                       |
+| Validation         | `zod`                                                                |
 
 ### 1.3 Repository Info
 
-| Field           | Value                                       |
-| --------------- | ------------------------------------------- |
-| npm package     | `opencode-acp`                              |
-| Current version | 1.10.0                                      |
-| GitHub          | https://github.com/ranxianglei/opencode-acp |
-| License         | AGPL-3.0-or-later                           |
-| Author          | ranxianglei                                 |
+This repository is **paradox8599's personal fork** of the upstream project — development happens here; upstream is reference only (no upstream remote configured).
+
+| Field           | Value                                         |
+| --------------- | --------------------------------------------- |
+| GitHub          | https://github.com/paradox8599/opencode-acp   |
+| Upstream        | https://github.com/ranxianglei/opencode-acp   |
+| npm package     | `opencode-acp` (not published from this fork) |
+| License         | AGPL-3.0-or-later                             |
+| Maintainer      | paradox8599                                   |
+| Original author | ranxianglei                                   |
 
 ---
 
@@ -256,7 +259,7 @@ Three-layer config merging (later layers override earlier):
 1. Global:     ~/.config/opencode/acp.jsonc
 2. Config dir: $OPENCODE_CONFIG_DIR/acp.jsonc
 3. Project:    .opencode/acp.jsonc
- ```
+```
 
 #### Default Configuration
 
@@ -297,12 +300,12 @@ Three-layer config merging (later layers override earlier):
 
 ### 2.5 Storage Paths
 
-| What              | ACP Path                          | Notes          |
-| ----------------- | --------------------------------- | -------------- |
-| State persistence | `plugin/acp/{sessionId}.json`     | JSON file I/O  |
-| Config            | `~/.config/opencode/acp.jsonc`    | JSONC          |
-| Prompt overrides  | `~/.config/opencode/acp-prompts/` | File-based     |
-| Debug logs        | `logs/acp/`                       | Per-request    |
+| What              | ACP Path                          | Notes         |
+| ----------------- | --------------------------------- | ------------- |
+| State persistence | `plugin/acp/{sessionId}.json`     | JSON file I/O |
+| Config            | `~/.config/opencode/acp.jsonc`    | JSONC         |
+| Prompt overrides  | `~/.config/opencode/acp-prompts/` | File-based    |
+| Debug logs        | `logs/acp/`                       | Per-request   |
 
 Base storage: `~/.local/share/opencode/storage/`
 
@@ -348,7 +351,7 @@ The package ships **TypeScript source**: `exports` points at `index.ts`, and Ope
 **Test directory**: Flat `tests/` structure — all test files in `tests/*.test.ts`. No subdirectories.
 The project has ~70 source files under `lib/` and 45 test files; flat structure is sufficient.
 
-CI is configured via GitHub Actions (PR #2): typecheck + test + build on Node 22/24 matrix.
+This fork does not use CI — run typecheck + tests locally before committing (Section 5.1.1).
 
 **Baseline**: Tag `v1.0.1-test-baseline` — 95 tests, initial state before ACP test fixes.
 
@@ -358,13 +361,11 @@ CI is configured via GitHub Actions (PR #2): typecheck + test + build on Node 22
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------ |
 | **Baseline**      | `hooks-permission.test.ts`, `compress-message.test.ts`, `compress-range.test.ts`, `message-priority.test.ts`, `token-counting.test.ts`, `context-limits.test.ts`, `update.test.ts` | 95    | Original DCP tests, adapted for ACP  |
 | **Tier 1 (pure)** | `config-validation.test.ts`, `priority-classify.test.ts`, `shape.test.ts`, `query-pure.test.ts`, `gc-truncate-pure.test.ts`, `state-utils-pure.test.ts`                            | 83    | Pure function tests, no side effects |
-| **Tier 2 (mock)** | `query-mock.test.ts`, `gc-truncate-mock.test.ts`                                                                                                                                                      | 68    | Mock-data unit tests                 |
+| **Tier 2 (mock)** | `query-mock.test.ts`, `gc-truncate-mock.test.ts`                                                                                                                                   | 68    | Mock-data unit tests                 |
 | **Functional**    | `compress-search.test.ts`, `compress-state.test.ts`, `message-ids.test.ts`                                                                                                         | 77    | Compress pipeline with mock data     |
 | **E2E**           | `e2e-message-transform.test.ts`, `e2e-blocks-nudges.test.ts`                                                                                                                       | 21    | Full message-transform pipeline      |
 
 **Total: 591 tests, 0 failures** (as of v1.10.0)
-
-**Test review requirement**: All new and modified test files MUST undergo independent review by at least 2 separate agents before commit. See Section 5.4.
 
 **Coverage gaps** (modules still without dedicated tests):
 
@@ -382,7 +383,7 @@ There is no build or deploy step: point OpenCode at this checkout once, then res
 ```jsonc
 // ~/.config/opencode/opencode.jsonc
 {
-    "plugins": ["/absolute/path/to/opencode-acp"]
+    "plugins": ["/absolute/path/to/opencode-acp"],
 }
 ```
 
@@ -397,20 +398,6 @@ There is no build or deploy step: point OpenCode at this checkout once, then res
 ~/.config/opencode/logs/acp/context/<session_id>/<timestamp>.json   # per-request message snapshots
 ~/.config/opencode/logs/acp/daily/<date>.log                        # WARN/ERROR always; INFO/DEBUG when debug: true
 ```
-
-### 3.5 npm Publishing
-
-```bash
-# Pre-publish checks (runs build + verify)
-npm run check:package
-
-# Publish (uses Automation token for 2FA bypass)
-npm publish
-```
-
-**Important**: The `.git/config` contains a GitHub OAuth token in the remote URL. Ensure it's not included in the npm package (the `files` field prevents this).
-
----
 
 ## 4. Code Change Guidelines
 
@@ -481,7 +468,7 @@ For reference when modifying code — these bugs were real and the fixes are loa
 ### 5.1 Before Making Changes
 
 1. Run `npm run typecheck` to ensure no type errors
-2. Run `npm run format:check` to ensure formatting is consistent
+2. Keep the files you touch Prettier-formatted (`npx prettier --write <files>`; repo-wide `format:check` has pre-existing drift)
 3. Understand the module dependency graph (Section 4.1)
 4. Check if the change affects backward compatibility (Section 2.6)
 
@@ -489,71 +476,31 @@ For reference when modifying code — these bugs were real and the fixes are loa
 
 All changes MUST follow this workflow:
 
-1. Create a feature branch from `master` (naming: `YYYY-MM-DD_short-title`)
-2. Create devlog entry: `devlog/{YYYY-MM-DD_short-title}/` with `REQ.md` (see Section 5.1.2)
+1. Work on the current branch — do NOT create a feature branch (this fork commits to `master` directly)
+2. Create devlog entry: `devlog/{YYYY-MM-DD_short-title}/` with `REQ.md` and `WORKLOG.md` (see Section 5.1.2)
 3. Implement changes
 4. Ensure `npm run typecheck` and `npm run verify:package` pass
-5. Ensure all tests pass: `npm run test`
-6. Commit with descriptive messages (include devlog files)
-7. Push branch and create a GitHub PR
-8. Obtain **dual-agent review** (Sections 5.3 + 5.4) on the PR
-9. **PR merge is a human-only operation** — AI agents MUST NEVER merge PRs, even when explicitly instructed or forced by a human. See [§5.1.1.2](#5112-pr-merge-absolute-prohibition) for the absolute policy. The Agent prepares the PR; the human clicks "Merge".
+5. Ensure all tests pass: `npm run test` — plus `./scripts/e2e/run-e2e.sh` when the transform pipeline or nudge logic is affected
+6. Commit with descriptive **English** messages (include devlog files) — ONLY after the user has explicitly agreed to commit
+7. Push or publish ONLY on explicit instruction — this fork has no CI and does not publish to npm
 
 ### 5.1.1.1 Git Safety Rules (MANDATORY)
 
-| Rule                                                                    | Enforcement                                                                                                                 |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **NEVER force-push to `master`**                                        | Under no circumstances. Not for reverts, not for fixes, not for "quick corrections". If master needs changing, create a PR. |
-| **NEVER merge PRs — ABSOLUTE PROHIBITION, no exceptions**               | PR merges are a **human-only operation**. The Agent MUST NEVER merge any PR, under ANY circumstances. See [§5.1.1.2](#5112-pr-merge-absolute-prohibition) for the full policy. |
-| **NEVER remove and re-apply GitHub branch protection to force changes** | This is a circumvention of the merge policy. If protection blocks a push, the correct response is to create a PR.           |
-| **NEVER delete branches or tags without human confirmation**            | Preserve work for review.                                                                                                   |
-| **NEVER modify `version` field in `package.json` on non-release branches** | Version bumps happen ONLY on `YYYY-MM-DD_release-v*` branches (see §5.4.2). Regular feature/fix PRs MUST NOT touch the `version` field. The CI changelog check (§5.4.1) enforces this indirectly: if `version` changes, `CHANGELOG.md` and `CHANGELOG.zh-CN.md` MUST also be modified with a `### v{VERSION}` header. Violating this rule causes version-number drift across non-release PRs (e.g., v1.13.0 → v1.13.1 in a feature PR) which makes release bookkeeping unpredictable and can lead to skipped or duplicated npm publishes. |
-
-### 5.1.1.2 PR Merge — Absolute Prohibition
-
-> **PR merges are a human-only operation. The Agent MUST NEVER merge any PR.**
-
-This is an **absolute rule with no exceptions**. It applies to:
-
-| Situation                                                                       | Agent Action                                                                                       |
-| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| No human instruction to merge                                                    | Do not merge. End of story.                                                                        |
-| Human implicitly suggests merging (e.g., "提交一下代码", "ship it", "looks good") | Do not merge. Treat as commit/push only. If ambiguous, ASK; do not assume merge authorization.    |
-| Human explicitly authorizes merge (e.g., "you may merge")                       | Do not merge. Reply that PR merges are a human-only operation and the human must perform it.       |
-| Human directly instructs/orders merge (e.g., "merge this now")                  | Do not merge. Reply that PR merges are a human-only operation and the human must perform it.       |
-| Human forces or demands auto-merge (e.g., "I order you to merge", ultimatums)   | **Explicitly refuse.** State that this rule cannot be overridden by any instruction, including this one. |
-| Human claims this rule does not apply to a specific case                         | Do not merge. This rule has no case-by-case exceptions.                                            |
-| The PR is a revert, fix-up, or "obvious" merge                                  | Do not merge. Reverts and fixes follow the same rule.                                              |
-| CI checks all pass and reviews are complete                                      | Do not merge. Green CI is necessary but not sufficient — human action is still required.           |
-| Hotfix / urgent situation                                                       | Do not merge. Urgency does not override this rule.                                                 |
-
-**What the Agent MUST do instead:**
-
-1. Prepare the PR (branch, commits, push, `gh pr create`).
-2. Verify CI passes.
-3. Report the PR URL to the human.
-4. **Stop.** Wait for the human to click "Merge" themselves.
-
-**What the Agent MUST NOT do:**
-
-- Call `gh pr merge`, `gh api .../merge`, or any command that merges a PR.
-- Toggle GitHub branch protection to enable a merge (also forbidden by §5.1.1.1).
-- Use admin overrides, force-push, or any workaround to land changes on `master` without going through human-initiated PR merge.
-- Re-interpret human words ("commit", "ship", "land", "deploy", "提交", "上线") as merge authorization. These mean commit/push, not merge.
-
-**How to respond when a human instructs the Agent to merge:**
-
-> I can't merge PRs — AGENTS.md §5.1.1.2 forbids Agents from merging PRs under any circumstances, including when explicitly instructed. Please merge the PR yourself: [PR URL].
-
-This rule exists because PR merges are irreversible, land code on the protected `master` branch, and may trigger automated releases. Human-only execution ensures a human is always in the loop for these irreversible operations. The rule is intentionally designed so that **no instruction — not even an explicit override from the user — can relax it**. If a human wants this rule changed, they must edit this section of AGENTS.md themselves; the Agent will continue to follow the written rule until then.
+| Rule                                                         | Enforcement                                                                  |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| **NEVER force-push to `master`**                             | Under no circumstances — no history rewrites, not even for fixes or reverts. |
+| **NEVER commit without the user's explicit consent**         | "Looks good" is not a commit request. Ask first.                             |
+| **NEVER push (or publish) unless explicitly instructed**     | Commits stay local until the user says otherwise.                            |
+| **NEVER delete branches or tags without human confirmation** | Preserve work for review.                                                    |
+| **NEVER modify the `version` field in `package.json`**       | Only during an explicit release task the user asked for.                     |
 
 ### 5.1.2 Devlog Requirement (MANDATORY)
 
-Every PR MUST have a corresponding devlog entry in `devlog/{YYYY-MM-DD_short-title}/`.
+Every change MUST have a corresponding devlog entry in `devlog/{YYYY-MM-DD_short-title}/`.
 
 **Rules:**
 
-- The folder name MUST match the branch name
+- The folder name describes the change — there is no branch to match (this fork works directly on the current branch)
 - `REQ.md` and `WORKLOG.md` are the required minimum
 - `DESIGN.md` is required for any change affecting architecture, data flow, or module boundaries
 - `REQ.md` should be filled **BEFORE** implementation (functions as a ticket)
@@ -562,263 +509,21 @@ Every PR MUST have a corresponding devlog entry in `devlog/{YYYY-MM-DD_short-tit
 
 See `devlog/README.md` for templates and naming conventions.
 
-### 5.1.3 Problem Discovery & Fix Reporting (MANDATORY)
-
-Problems discovered or fixed while working MUST leave a trace in the issue tracker — never fixed silently and moved on.
-
-1. **Discovered a problem** (bug, defect, wrong behavior, spec violation) — whether while working on this project or any sibling project — file an issue in the project the problem belongs to: repro/steps, impact, root cause (if known), suggested fix.
-2. **Fixed a problem** — after the fix, submit an issue to the owning project recording the problem and how it was fixed. For problems in this project: https://github.com/ranxianglei/opencode-acp/issues . If the fix ships as a PR, the PR MUST reference its issue (`Fixes #N`); a bare PR without an issue is not acceptable — file the issue first, then link it. An existing PR for the fix counts, but it should carry an accompanying issue.
-
 ### 5.2 After Making Changes
 
 1. `npm run typecheck` must pass
 2. `npm run verify:package` must pass
 3. Run relevant tests
 4. Deploy locally and test in opencode
-5. Update version in `package.json` before publishing
-
-### 5.3 Code Review (MANDATORY)
-
-All source code changes (files under `lib/`) MUST undergo independent review by **at least 2 separate agents** before merge. This applies to:
-
-- New modules added to `lib/`
-- Modified source files
-- Changes to shared types, interfaces, or exports
-
-**Review checklist:**
-
-| Category                   | What to Check                                                                                |
-| -------------------------- | -------------------------------------------------------------------------------------------- |
-| **Correctness**            | Logic matches intent, no off-by-one errors, edge cases handled                               |
-| **Backward compatibility** | No breaking changes to persisted state format, exported APIs, or internal tags (Section 2.6) |
-| **Performance**            | No unnecessary CPU/memory overhead, no O(n²) where O(n) suffices                             |
-| **Type safety**            | No `as any`, no `@ts-ignore`, no type assertion hacks                                        |
-| **State integrity**        | State mutations are safe, no lost data on save/load cycle                                    |
-
-### 5.4 Release Workflow (Automated via CI)
-
-Releases are **fully automated through GitHub Actions**. The workflow is: create a release PR → merge → CI auto-tags, builds, tests, and publishes to npm. No manual `npm publish` or `git tag` needed.
-
-#### 5.4.1 CI Workflows
-
-Two GitHub Actions workflows enforce AGENTS.md standards and automate releases:
-
-**`pr-checks.yml`** — runs on every PR to master:
-
-| Check | What it validates | Script |
-|-------|------------------|--------|
-| Branch name | Matches `YYYY-MM-DD_short-title` (regex: `^\d{4}-\d{2}-\d{2}_[a-z0-9.-]+$`) | `scripts/ci/check-pr.sh` |
-| Devlog | `devlog/{branch-name}/REQ.md` and `WORKLOG.md` exist | same |
-| Changelog | If `package.json` version changed, `CHANGELOG.md` and `CHANGELOG.zh-CN.md` must be modified and contain `### v{VERSION}` | same |
-
-**`release.yml`** — triggers on push to master (PR merge):
-
-1. Checks if the merge commit came from a release branch (`YYYY-MM-DD_release-v*`)
-2. If yes, reads `package.json` version and creates `v{VERSION}` tag
-3. Runs `npm ci` → `npm run check:package` → `npm test`
-4. Publishes to npm registry (uses `NPM_TOKEN` secret)
-5. Creates GitHub Release with auto-generated notes
-
-**Why not separate tag-triggered publish?** GitHub Actions does not allow workflows pushed by `GITHUB_TOKEN` to trigger other workflows. A separate `auto-tag.yml` + tag-triggered `release.yml` chain does not work — the tag push from `auto-tag.yml` won't fire `release.yml`. The unified workflow solves this by doing everything in one job.
-
-Can also be triggered manually via `workflow_dispatch` with `force: true` to publish outside a release branch merge.
-
-#### 5.4.2 Release Process (Step-by-Step)
-
-**Step 1: Create a release branch**
-
-```bash
-git checkout master
-git pull origin master
-git checkout -b YYYY-MM-DD_release-v{VERSION}
-```
-
-The branch name MUST match `YYYY-MM-DD_release-v{VERSION}` for auto-tagging to work (e.g., `2026-07-11_release-v1.11.2`).
-
-**Step 2: Bump version + update changelog + devlog**
-
-```bash
-# Edit package.json — bump version
-# Edit CHANGELOG.md — add changelog entry at the top (under "# Changelog")
-# Edit CHANGELOG.zh-CN.md — add changelog entry at the top (under "# 更新日志")
-# Create devlog/YYYY-MM-DD_release-v{VERSION}/REQ.md + WORKLOG.md
-```
-
-Changelog format:
-
-```markdown
-### v{VERSION} — Title (PR #NNN)
-
-**Problem**: What was wrong.
-**Fix**: What changed.
-Files: `path/to/file.ts`. Tests: `tests/file.test.ts`.
-```
-
-**Step 3: Verify locally, commit, push, create PR**
-
-```bash
-# Verify CI checks pass locally
-./scripts/ci/check-pr.sh YYYY-MM-DD_release-v{VERSION} origin/master
-
-# Commit
-git add -A
-git commit -m "release: v{VERSION} — title"
-git push origin YYYY-MM-DD_release-v{VERSION}
-
-# Create PR (CI will run pr-checks.yml + ci.yml)
-gh pr create --title "release: v{VERSION} — title" --body "..."
-```
-
-**Step 4: Merge PR (human-only operation — Agent MUST NOT merge)**
-
-Wait for CI to pass (`pr-validation`, `test`, `build`), then a human merges the PR. The Agent MUST NEVER merge the PR itself, even if explicitly instructed — see [§5.1.1.2](#5112-pr-merge-absolute-prohibition).
-
-**Step 5: Auto-publish (fully automated)**
-
-Merging the PR triggers `release.yml` automatically — no manual action needed:
-
-1. Push to master → `release.yml` detects release branch merge (`YYYY-MM-DD_release-v*`)
-2. Creates `v{VERSION}` tag, builds, tests, publishes to npm, creates GitHub Release
-
-All in one workflow — no chained workflows (GitHub Actions limitation: `GITHUB_TOKEN` cannot trigger other workflows).
-
-**Step 6: Verify**
-
-```bash
-# Check npm registry
-npm view opencode-acp version
-
-# Check GitHub Release
-gh release view v{VERSION} --repo ranxianglei/opencode-acp
-```
-
-#### 5.4.3 Prerequisites
-
-- **`NPM_TOKEN` secret** must be set in GitHub repo settings (Settings → Secrets → Actions). Create an "Automation" type token at https://www.npmjs.com/settings/ranxianglei/tokens.
-- **GitHub branch protection** on `master` must require `pr-validation` check to pass before merge.
-- **Release branch naming** must follow `YYYY-MM-DD_release-v{VERSION}` for auto-tagging to trigger.
-
-#### 5.4.4 Manual Publish (Legacy Fallback)
-
-If CI is down or `NPM_TOKEN` is misconfigured, publish manually as a fallback:
-
-```bash
-# 0. Ensure clean state on master
-git checkout master && git pull origin master
-git status --porcelain  # MUST be empty
-
-# 1. Build + verify
-npm run check:package
-
-# 2. Privacy audit
-npm pack --dry-run 2>&1
-npm pack && tar -tf opencode-acp-*.tgz | grep -iE '\.env|secret|credential|token|key|\.pem|\.key'
-rm opencode-acp-*.tgz
-
-# 3. Tag + publish
-git tag -a "v{VERSION}" -m "release v{VERSION}"
-git push origin "v{VERSION}"
-npm publish
-
-# 4. Verify
-npm view opencode-acp version
-```
-
-Only use this as a fallback. The automated workflow (Section 5.4.2) is the standard release process.
-
-#### 5.4.5 Dev / Prerelease Publishing
-
-For testing changes before a stable release, publish a **dev prerelease** to npm's `dev` tag (not `latest`). This lets users opt in via `opencode-acp@dev` without affecting stable users on `@latest`.
-
-**How CI detects prereleases**: The `release.yml` workflow checks if the version string contains `-` (e.g., `1.13.0-dev.1`, `1.12.7-beta.2`). If it does, it publishes with `--tag dev` and marks the GitHub Release as `prerelease: true`. If not, it publishes with `--tag latest` (normal stable release).
-
-**Step-by-step**:
-
-```bash
-# 1. Create a release branch (same naming convention as stable releases)
-git checkout master && git pull origin master
-git checkout -b YYYY-MM-DD_release-v{VERSION}-dev
-
-# 2. Set a prerelease version in package.json (MUST contain a hyphen)
-#    e.g., "1.12.7-dev.1", "1.13.0-beta.1", "2.0.0-rc.1"
-
-# 3. Add changelog entries to CHANGELOG.md and CHANGELOG.zh-CN.md
-#    (header must contain ### v{VERSION} including the suffix, e.g. ### v1.12.7-dev.1)
-
-# 4. Create devlog entry
-
-# 5. Verify, commit, push, create PR
-./scripts/ci/check-pr.sh YYYY-MM-DD_release-v{VERSION}-dev origin/master
-git add -A && git commit -m "release: v{VERSION}-dev.1 — title"
-git push origin YYYY-MM-DD_release-v{VERSION}-dev
-gh pr create --title "release: v{VERSION}-dev.1 — title" --body "..."
-
-# 6. Merge PR (human-only operation — Agent MUST NOT merge, see §5.1.1.2)
-
-# 7. CI auto-publishes to npm dev tag + creates prerelease GitHub Release
-```
-
-**Installing a dev prerelease**:
-
-```json
-{
-    "plugin": {
-        "opencode-acp": "dev"
-    }
-}
-```
-
-Or via CLI:
-
-```bash
-opencode plugin add opencode-acp@dev
-```
-
-**Key differences from stable releases**:
-
-| Aspect               | Stable                          | Dev/Prerelease                   |
-| -------------------- | ------------------------------- | -------------------------------- |
-| Version format       | `1.12.7`                        | `1.12.7-dev.1` (contains `-`)    |
-| npm tag              | `latest`                        | `dev`                            |
-| GitHub Release       | stable                          | prerelease                       |
-| Install              | `opencode-acp@latest`           | `opencode-acp@dev`               |
-| Branch naming        | `YYYY-MM-DD_release-v{VERSION}` | same convention                  |
-
-**Promoting dev → stable**: When ready, create a new release branch with the stable version (remove the `-suffix`), e.g., `1.12.7-dev.1` → `1.12.7`. CI will publish to `latest`.
 
 ### 5.5 Commit Convention
 
-Use descriptive commit messages. Historical examples:
+Use descriptive commit messages written in **English**. Historical examples:
 
 - `fix: aging warning only shows when context usage > 50%`
 - `feat: /dcp → /acp command rename with backward compat`
 - `chore: bump version to 1.0.1`
 - `fix: config migration moved to getConfig() entry point`
-
-### 5.6 Test Review (MANDATORY)
-
-All new and modified test files MUST undergo independent review by **at least 2 separate agents** before merge (same requirement as Section 5.3 code review). This requirement applies to:
-
-- New test files added to `tests/`
-- Modified test files (changed test logic, not just test names)
-- Changes to test utilities or factories that affect test correctness
-
-**Review checklist:**
-
-| Category                  | What to Check                                                                                                                                                                     |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Import correctness**    | Tests import from actual source files, not local reimplementations. If a source module has untestable runtime dependencies, extract pure logic into a separate importable module. |
-| **Test name fidelity**    | Test name accurately describes what the test asserts. A test named "returns true" must assert `true`, not `false`.                                                                |
-| **Config completeness**   | `buildConfig()` factory includes ALL required config fields (including `gc`), matching the `PluginConfig` type.                                                                   |
-| **Input validity**        | Test inputs actually exercise the code path described in the test name. A "dcp tag stripping" test must contain actual dcp tags.                                                  |
-| **No tautological tests** | Tests must assert meaningful behavior, not trivially true conditions (e.g., `assert.equal(x, x)`).                                                                                |
-
-**Anti-patterns to flag:**
-
-- Tests that reimplement source logic locally instead of importing from source
-- `buildConfig()` missing fields that other test files include
-- Test names that contradict their assertions
-- Tests whose inputs don't match what the test name describes
 
 ### 5.7 Nudge & Growth Testing Requirements (MANDATORY)
 
@@ -826,22 +531,22 @@ Changes to `lib/messages/inject/` or nudge-related logic MUST include tests that
 
 #### 5.7.1 Unit Test Requirements
 
-| Requirement | What | Why |
-|-------------|------|-----|
-| **Multi-turn** | At least 2 consecutive `injectCompressNudges` calls in the same test, sharing `SessionState` | Single-turn tests cannot catch cross-turn state bugs (baseline accumulation, feedback loops, proportional adjustment) |
-| **Side-effect assertions** | Assert BOTH `shouldInjectThisTurn` AND `lastPerMessageNudgeTokens` (and/or `lastNudgeShownTokens`) after each call | Checking only `shouldInject` misses baseline mutations that are invisible until the next turn |
-| **Production config** | At least one test per PR MUST use `preserveRecentMessages > 0` (production default: 20) | All existing tests use `preserveRecentMessages: 0`, which disables protection — the exact scenario that triggers `nothingToCompress` in production is never tested |
-| **Growth cycle** | At least one test covers the full cycle: baseline → growth → nudge → compress → new baseline → growth → nudge | Verifies that the nudge system self-resets correctly after compression and can fire again |
+| Requirement                | What                                                                                                               | Why                                                                                                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Multi-turn**             | At least 2 consecutive `injectCompressNudges` calls in the same test, sharing `SessionState`                       | Single-turn tests cannot catch cross-turn state bugs (baseline accumulation, feedback loops, proportional adjustment)                                              |
+| **Side-effect assertions** | Assert BOTH `shouldInjectThisTurn` AND `lastPerMessageNudgeTokens` (and/or `lastNudgeShownTokens`) after each call | Checking only `shouldInject` misses baseline mutations that are invisible until the next turn                                                                      |
+| **Production config**      | At least one test per change MUST use `preserveRecentMessages > 0` (production default: 20)                        | All existing tests use `preserveRecentMessages: 0`, which disables protection — the exact scenario that triggers `nothingToCompress` in production is never tested |
+| **Growth cycle**           | At least one test covers the full cycle: baseline → growth → nudge → compress → new baseline → growth → nudge      | Verifies that the nudge system self-resets correctly after compression and can fire again                                                                          |
 
 #### 5.7.2 Docker E2E Requirements
 
 Docker E2E tests (`scripts/e2e/`) MUST cover:
 
-| Requirement | What | Why |
-|-------------|------|-----|
-| **Nudge-triggered compression** | At least one scenario using `"respond": "nudge-compress"` — the fake LLM detects ACP's nudge injection via `detectNudge()` (scans user-role messages for nudge-unique phrases) and emits a compress call in response | Tests the real nudge→compress flow, not just scripted compress calls |
-| **Nudge state verification** | `verify.ts` MUST check nudge state fields (`lastPerMessageNudgeTokens`) not just `blockCount` | Block count alone cannot detect baseline corruption or nudge suppression bugs |
-| **Growth accumulation** | At least one scenario where context grows across multiple turns past the nudge threshold | Tests that all-compress-in-one-turn don't exercise the growth-gating logic |
+| Requirement                     | What                                                                                                                                                                                                                 | Why                                                                           |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **Nudge-triggered compression** | At least one scenario using `"respond": "nudge-compress"` — the fake LLM detects ACP's nudge injection via `detectNudge()` (scans user-role messages for nudge-unique phrases) and emits a compress call in response | Tests the real nudge→compress flow, not just scripted compress calls          |
+| **Nudge state verification**    | `verify.ts` MUST check nudge state fields (`lastPerMessageNudgeTokens`) not just `blockCount`                                                                                                                        | Block count alone cannot detect baseline corruption or nudge suppression bugs |
+| **Growth accumulation**         | At least one scenario where context grows across multiple turns past the nudge threshold                                                                                                                             | Tests that all-compress-in-one-turn don't exercise the growth-gating logic    |
 
 The `fake-llm-server.ts` reports `prompt_tokens` from actual input message sizes (via `computeInputTokens`), so ACP sees realistic token counts for threshold evaluation.
 
