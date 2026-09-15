@@ -140,32 +140,124 @@ test("setup registers context hook, ACP tools and commands", async () => {
 
     const languageHook = fake.aiHooks.get("language")
     assert.ok(languageHook, "the language hook (hallucination filter) must be registered")
-    const language = {
+    for (const tool of fake.tools) {
+        assert.ok(tool.description.length > 0, `${tool.name} must carry a description`)
+        assert.ok(tool.input, `${tool.name} must carry an input schema`)
+    }
+})
+
+const LEAKED_TAG = '<dcp-message-id tokens="104" type="text">m00041</dcp-message-id>'
+
+/** Minimal `LanguageModelV3` whose stream emits a hallucinated dcp tag. */
+function fakeLanguage(): any {
+    return {
         specificationVersion: "v3",
         provider: "test",
         modelId: "model",
         supportedUrls: {},
         doGenerate: async () => undefined,
         doStream: async () => ({
-            stream: new ReadableStream({ start: (controller) => controller.close() }),
+            stream: new ReadableStream({
+                start(controller) {
+                    controller.enqueue({ type: "text-start", id: "t1" })
+                    controller.enqueue({
+                        type: "text-delta",
+                        id: "t1",
+                        delta: `hello ${LEAKED_TAG} world`,
+                    })
+                    controller.enqueue({ type: "text-end", id: "t1" })
+                    controller.close()
+                },
+            }),
         }),
     }
-    const languageEvent: any = { model: {}, sdk: {}, options: {}, language }
-    await languageHook(languageEvent)
-    assert.notEqual(
-        languageEvent.language,
-        language,
-        "the language hook must wrap the resolved model",
-    )
-    assert.equal(
-        languageEvent.language.modelId,
-        "model",
-        "the wrapped model must keep the identity fields",
-    )
-    for (const tool of fake.tools) {
-        assert.ok(tool.description.length > 0, `${tool.name} must carry a description`)
-        assert.ok(tool.input, `${tool.name} must carry an input schema`)
+}
+
+async function streamText(model: any): Promise<string> {
+    const { stream } = await model.doStream({})
+    const reader = stream.getReader()
+    let text = ""
+    for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (value.type === "text-delta") text += value.delta
     }
+    return text
+}
+
+test("language hook supplies a wrapped model built from the SDK fallback", async () => {
+    writeAcpConfig({})
+    const { ctx, fake } = makeContext({
+        models: [{ providerID: "test", id: "model", limit: { context: 100_000 } }],
+    })
+    await plugin.setup(ctx)
+
+    const languageHook = fake.aiHooks.get("language")
+    assert.ok(languageHook, "the language hook (hallucination filter) must be registered")
+
+    // Production shape: the event ships without a `language` field — core only
+    // uses what a hook supplies and otherwise falls back to sdk.languageModel().
+    const sdkModel = fakeLanguage()
+    const event: any = {
+        model: { id: "model" },
+        sdk: { languageModel: (id: string) => sdkModel },
+        options: {},
+    }
+    await languageHook(event)
+
+    assert.ok(
+        event.language,
+        "the hook must supply a model — core falls back to sdk.languageModel() only when `language` stays unset",
+    )
+    assert.notEqual(event.language, sdkModel, "the supplied model must be the wrapped one")
+    assert.equal(event.language.modelId, "model", "the wrapped model must keep the identity fields")
+
+    const text = await streamText(event.language)
+    assert.ok(
+        !text.includes("dcp-message-id"),
+        "hallucinated tags must be stripped from the stream",
+    )
+    assert.equal(text, "hello  world", "clean text must survive the filter")
+})
+
+test("language hook wraps a model from an earlier hook and tolerates missing SDK models", async () => {
+    writeAcpConfig({})
+    const { ctx, fake } = makeContext({
+        models: [{ providerID: "test", id: "model", limit: { context: 100_000 } }],
+    })
+    await plugin.setup(ctx)
+
+    const languageHook = fake.aiHooks.get("language")
+    assert.ok(languageHook, "the language hook (hallucination filter) must be registered")
+
+    const provided = fakeLanguage()
+    const withModel: any = { model: { id: "model" }, sdk: {}, options: {}, language: provided }
+    await languageHook(withModel)
+    assert.notEqual(withModel.language, provided, "an earlier hook's model must still be wrapped")
+
+    const noSdkModel: any = { model: { id: "model" }, sdk: {}, options: {} }
+    await languageHook(noSdkModel)
+    assert.equal(
+        noSdkModel.language,
+        undefined,
+        "without an SDK model the hook must leave `language` unset",
+    )
+
+    const throwingSdk: any = {
+        model: { id: "model" },
+        sdk: {
+            languageModel: () => {
+                throw new Error("boom")
+            },
+        },
+        options: {},
+    }
+    await languageHook(throwingSdk)
+    assert.equal(
+        throwingSdk.language,
+        undefined,
+        "a throwing SDK must not fail model resolution — core keeps its own fallback",
+    )
 })
 
 test("setup stays off when a /bili/ proxy provider is configured", async () => {

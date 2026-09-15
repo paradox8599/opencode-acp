@@ -119,10 +119,27 @@ const plugin: Plugin.Plugin = {
         // has no such hook, so the same cleanup runs on the model stream —
         // before the harness persists or displays the text. See
         // lib/v2/hallucination-filter.ts.
+        //
+        // The event ships WITHOUT a model: core only uses `event.language` when
+        // a hook supplies it and otherwise falls back to
+        // `sdk.languageModel(...)` itself (packages/core/src/aisdk.ts), so the
+        // wrapper has to build that same fallback here to become the model
+        // core caches and streams through.
         await ctx.aisdk.hook("language", (event) => {
-            if (event.language) {
-                event.language = withHallucinationFilter(event.language)
+            let base = event.language
+            if (!base) {
+                const modelID = event.model?.modelID ?? event.model?.id
+                try {
+                    if (modelID && typeof event.sdk?.languageModel === "function") {
+                        base = event.sdk.languageModel(modelID)
+                    }
+                } catch {
+                    // Leave `language` unset: core keeps its own fallback and
+                    // surfaces the provider's error with better context.
+                    base = undefined
+                }
             }
+            if (base) event.language = withHallucinationFilter(base)
         })
 
         if (config.compress.permission === "ask") {
