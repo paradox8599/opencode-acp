@@ -28,7 +28,7 @@ A production-scale longitudinal study: 4.5 months, three hosts, 174,327 model ca
 </p>
 
 <p align="center">
-<code>opencode plugin opencode-acp@stable --global</code>
+<code>plugins: ["github:paradox8599/opencode-acp"]</code>
 </p>
 
 ---
@@ -101,19 +101,27 @@ across all other sessions.
 
 ## Installation
 
-Requires **OpenCode 2.0 or newer** (`@opencode/cli` + `@opencode/plugin`). ACP 2.x uses the V2 plugin API only — on OpenCode 1.x stay on ACP 1.18.x.
+Requires **OpenCode 2.0 or newer** (`@opencode/cli`). ACP is loaded source-direct: OpenCode clones/packages the source and installs its runtime dependencies automatically — no build step.
 
-```bash
-opencode plugin add opencode-acp@stable
-```
-
-Or add it to your opencode config:
+Add it to your `opencode.json`:
 
 ```jsonc
 {
-    "plugins": ["opencode-acp@stable"]
+    "plugins": ["github:paradox8599/opencode-acp"],
+    "compaction": { "auto": false }
 }
 ```
+
+For local development, point `plugins` at your checkout instead:
+
+```jsonc
+{
+    "plugins": ["/absolute/path/to/opencode-acp"],
+    "compaction": { "auto": false }
+}
+```
+
+Restart OpenCode after changing the plugin list (`/acp help` inside a session verifies it loaded).
 
 ---
 
@@ -539,7 +547,7 @@ For the `compress` tool, `compress.protectedTools` ensures specific tool outputs
 ACP is a drop-in replacement for DCP. To migrate:
 
 1. Remove the old DCP plugin from your `opencode.json`
-2. Install ACP: `opencode plugin opencode-acp@stable --global`
+2. Install ACP: add `"github:paradox8599/opencode-acp"` to the `plugins` array in your `opencode.json`
 3. Copy your config: `cp ~/.config/opencode/dcp.jsonc ~/.config/opencode/acp.jsonc`
 4. Copy prompt overrides (if any): `cp -r ~/.config/opencode/dcp-prompts ~/.config/opencode/acp-prompts`
 5. Copy session state (optional, preserves compression blocks): `cp -r ~/.local/share/opencode/storage/plugin/dcp ~/.local/share/opencode/storage/plugin/acp`

@@ -22,8 +22,6 @@ jobs:
 
             - run: npm ci
 
-            - run: npm run build
-
             - name: Publish to npm with PR tag
               # Fork PRs have no access to NPM_TOKEN (secrets are withheld
               # from forks) — publishing would fail with ENEEDAUTH and kill
@@ -59,7 +57,6 @@ jobs:
                   name: opencode-acp-pr-${{ github.event.pull_request.number }}
                   path: |
                       opencode-acp-pr*.tgz
-                      dist/
                   retention-days: 30
 
             - name: Comment on PR with install instructions
@@ -86,7 +83,7 @@ jobs:
                               '### Option A — Install from npm PR tag (recommended)',
                               '',
                               '```bash',
-                              'opencode plugin opencode-acp@pr-' + prNumber + ' --global',
+                              'opencode plugin add opencode-acp@pr-' + prNumber,
                               '```',
                               '',
                               'Each push to this PR publishes a new version under the `pr-' + prNumber + '` npm tag.',
@@ -98,18 +95,23 @@ jobs:
                           ] : []),
                           '### Option B — Install from GitHub',
                           '',
-                          '```bash',
-                          'opencode plugin "github:' + installRepo + '#' + branch + '" --global',
+                          'Requires OpenCode 2.0+. Add to `opencode.json`:',
+                          '',
+                          '```jsonc',
+                          '{ "plugins": ["github:' + installRepo + '#' + branch + '"] }',
                           '```',
                           '',
                           '### Option C — Download artifact',
                           '',
                           `1. Download the artifact from the [Actions run](${runUrl})`,
-                          '2. Extract the tarball and install:',
+                          '2. Extract it and point OpenCode at the source directory:',
                           '',
                           '```bash',
                           'tar xzf opencode-acp-pr' + prNumber + '.tgz',
-                          'cp -r package/dist ~/.cache/opencode/packages/opencode-acp@latest/node_modules/opencode-acp/dist',
+                          '```',
+                          '',
+                          '```jsonc',
+                          '{ "plugins": ["/absolute/path/to/package"] }',
                           '```',
                           '',
                           '3. **Restart opencode** to pick up changes.',

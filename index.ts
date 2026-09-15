@@ -1,6 +1,4 @@
-/** ACP version, injected at build time by tsup define */
-declare const ACP_VERSION: string | undefined
-import { Plugin } from "@opencode/plugin"
+import type { Plugin } from "@opencode/plugin"
 import { getConfig } from "./lib/config"
 import {
     createAcpContextRecapTool,
@@ -18,8 +16,9 @@ import { startAutoUpdate } from "./lib/update"
 import { createAcpHost } from "./lib/v2/host"
 import { createV2ContextHandler } from "./lib/v2/context-handler"
 import { toV2Tool } from "./lib/v2/tools"
+import { ACP_VERSION } from "./lib/version"
 
-export default Plugin.define({
+const plugin: Plugin.Plugin = {
     id: "opencode-acp",
 
     async setup(ctx) {
@@ -49,7 +48,7 @@ export default Plugin.define({
 
         const logger = new Logger(config.debug, config.debug ? "debug" : config.logLevel)
         logger.info("ACP plugin initialized", {
-            version: typeof ACP_VERSION !== "undefined" ? ACP_VERSION : "dev",
+            version: ACP_VERSION,
             workspace: directory,
             logLevel: logger.level,
             debug: config.debug,
@@ -235,7 +234,9 @@ export default Plugin.define({
             logger.info("ACP plugin unloaded")
         }
     },
-})
+}
+
+export default plugin
 
 function numberOrZero(value: unknown): number {
     return typeof value === "number" && Number.isFinite(value) ? value : 0

@@ -53,7 +53,7 @@ ACP 从最多三层配置文件中读取（后加载的覆盖先加载的）：
 - **类型：** `boolean`
 - **默认值：** `true`
 - **状态：** ACTIVE
-- **说明：** 启动时自动检查并安装 ACP 更新，跟踪安装时所用的 dist-tag/规范（`opencode-acp@stable` 跟随 `stable` 标签；`^1.14.0` 等范围规范跟随 `latest`）。版本锁定的规范永不更新。
+- **说明：** 启动时自动检查并安装 ACP 更新，跟踪安装时所用的 dist-tag/规范（`opencode-acp@stable` 跟随 `stable` 标签；`^1.14.0` 等范围规范跟随 `latest`）。版本锁定的规范永不更新。GitHub（`github:...`）与本地路径安装会跳过自动更新 —— 没有可跟踪的 registry 规范。
 
 #### `debug`
 

@@ -68,6 +68,8 @@ registration; `"ask"` logs a warning and behaves as `"allow"`.
   (`@opencode/ai/providers/openai-compatible` + `settings.baseURL`),
   `agents`, `permissions` ruleset, `compaction.auto: false`, `--standalone`
   on every CLI invocation, `OPENCODE_BIN` defaults to `opencode2`.
+- The plugin is loaded from the **repository root** (`index.ts`), so the e2e
+  suite exercises the same source-direct entry users get from GitHub.
 - `fake-llm-server.ts`: the subagent tool is `subagent` with `agent` (V1:
   `task` with `subagent_type`); `detectNudge` phrases updated to the current
   ACP nudge templates ("Context limit reached", "Context is getting full",
@@ -76,6 +78,34 @@ registration; `"ask"` logs a warning and behaves as `"allow"`.
 - `verify-package.mjs`: the CommonJS detector now recognizes dual packages with
   an ESM entry (`module` / `exports.import`), so importing `zod` from source no
   longer trips a false positive.
+
+### Source-direct packaging
+
+The package no longer bundles: `exports` points at `index.ts`, `files` ships
+`index.ts` + `lib/`, and `tsup`/`dist` are gone (`tsup.config.ts` deleted).
+Rationale: OpenCode V2's installer runs with `ignoreScripts: true`, so a
+git/GitHub install never executes `prepare` — a git-installed package must
+contain its loadable entry. This matches the pattern of other V2 plugins
+(e.g. `ccsafety-bridge`, whose `exports` is committed `src/index.ts`).
+
+- `@opencode/plugin` moved to devDependencies and must stay type-only at
+  runtime (`index.ts` exports a plain `{ id, setup }` object);
+  `verify-package.mjs` fails if it reappears in `dependencies`.
+- `context-compress-algorithms` moved from devDependencies to dependencies
+  (previously bundled by tsup).
+- `lib/version.ts` reads the version from `package.json` at runtime
+  (replaces the tsup `define`-injected `ACP_VERSION`).
+- `scripts/dev-deploy.sh` deleted: source-direct needs no deploy step — keep
+  `plugins: ["/abs/path/to/opencode-acp"]` in the config and restart.
+- `scripts/verify-package.mjs` rewritten for source packaging (entry/exports
+  shape, shipped files, forbidden paths).
+- CI: `build` job → `package` job (`npm run verify:package`); e2e loads the
+  repo root; `pr-artifact.yml` no longer builds and its install comment uses
+  the V2 config / `opencode plugin add` forms.
+- Docs: README/README.zh-CN installation now documents
+  `plugins: ["github:paradox8599/opencode-acp"]` and the local-checkout path;
+  AGENTS.md build/deploy sections rewritten; CONFIGURATION autoUpdate notes
+  that GitHub/local installs skip the registry check.
 
 ### System-prompt sizing
 
@@ -91,11 +121,12 @@ the budget guard need.
 - `npm run typecheck` — clean.
 - `npm test` — 1270/1271 (the one failure is the pre-existing macOS
   `tmpdir()` vs hard-coded `/tmp` path test, unrelated to this port).
-- `npm run check:package` — build + tarball verification pass.
+- `npm run check:package` — typecheck + tarball verification pass.
 - **E2E: all 13 scenarios pass on `@opencode/cli@2.0.3`** (`scripts/e2e`,
   fake LLM): basic/quality/batch compression, subagent compression, nudge
   triggered, protection filtering, nudge refire, tier-2 baseline, consumed
-  call hiding, adaptive candidates.
+  call hiding, adaptive candidates. Re-verified after the source-direct
+  switch: all 13 pass loading the repository root's `index.ts`.
 - New tests: `tests/v2-setup.test.ts` (6), `tests/v2-ai-adapter.test.ts` (9),
   `tests/v2-session-adapter.test.ts` (6); existing hook/permission/model-switch
   suites adapted.
@@ -106,7 +137,14 @@ the budget guard need.
   - nudges fire from real provider usage (`lastUsedTokens` persisted across
     `run` processes) and the visible context stays pruned;
   - `/acp help` via the V2 command API writes a synthetic transcript entry that
-    is stripped from the next outbound request (verified on a fresh session).
+    is stripped from the next outbound request (verified on a fresh session);
+  - **git install (source-direct)**: a local git snapshot installed through
+    `plugins: ["git+file://…"]` resolves the entry to
+    `…/node_modules/opencode-acp/index.ts`; OpenCode installed exactly the four
+    runtime dependencies (`@anthropic-ai/tokenizer`, `context-compress-algorithms`,
+    `jsonc-parser`, `zod`, plus transitive `tiktoken`/`undici-types`/`@types`),
+    installed **no** devDependencies, and ACP processed a live turn (17 tools,
+    transform complete, state persisted).
 
 ## Known gaps / follow-ups
 

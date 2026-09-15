@@ -53,7 +53,7 @@ Status legend: **ACTIVE** = currently used | **DEPRECATED** = kept for backward 
 - **Type:** `boolean`
 - **Default:** `true`
 - **Status:** ACTIVE
-- **Description:** Automatically check for and install ACP updates on startup, tracking the dist-tag/spec the plugin was installed with (`opencode-acp@stable` follows the `stable` tag; range specs like `^1.14.0` follow `latest`). Version-locked specs are never updated.
+- **Description:** Automatically check for and install ACP updates on startup, tracking the dist-tag/spec the plugin was installed with (`opencode-acp@stable` follows the `stable` tag; range specs like `^1.14.0` follow `latest`). Version-locked specs are never updated. GitHub (`github:...`) and local-path installs are skipped — there is no registry spec to track.
 
 #### `debug`
 

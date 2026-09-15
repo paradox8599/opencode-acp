@@ -3,7 +3,7 @@
 # E2E test runner for ACP compression.
 #
 # Runs scenario-based end-to-end tests:
-#   1. Builds ACP
+#   1. Loads ACP from the repository root (source-direct, no build step)
 #   2. Starts a fake LLM server
 #   3. Configures opencode with fake provider + local ACP plugin
 #   4. Runs scripted multi-turn conversations
@@ -16,7 +16,6 @@
 # Usage:
 #   ./scripts/e2e/run-e2e.sh                     # run all scenarios
 #   ./scripts/e2e/run-e2e.sh scripts/e2e/scenarios/01-basic-compress.json  # run one
-#   SKIP_BUILD=1 ./scripts/e2e/run-e2e.sh        # skip npm build (for iteration)
 
 set -euo pipefail
 
@@ -65,19 +64,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ -z "${SKIP_BUILD:-}" ]]; then
-    step "build ACP"
-    (cd "$REPO_ROOT" && npm run build 2>&1 | tail -3)
-    pass "build complete"
-fi
+step "check ACP source entry"
+[[ -f "$REPO_ROOT/index.ts" ]] || fail "ACP source entry not found at $REPO_ROOT/index.ts"
+pass "source entry present"
 
 step "configure opencode (HOME=$FAKE_HOME)"
 
 rm -rf "$FAKE_HOME"
 mkdir -p "$FAKE_HOME/.config/opencode"
 
-ACP_DIST="$REPO_ROOT/dist"
-[[ -f "$ACP_DIST/index.js" ]] || fail "ACP dist not found at $ACP_DIST — run npm run build"
+ACP_PLUGIN="$REPO_ROOT"
+[[ -f "$ACP_PLUGIN/index.ts" ]] || fail "ACP source entry not found at $ACP_PLUGIN/index.ts"
 
 # write_acp_config [output-path] [override-jsonc-string] — defaults disable all protection (legacy); scenarios override via "acpConfig" field
 write_acp_config() {
@@ -112,7 +109,7 @@ ACPJSON
 cat > "$FAKE_HOME/.config/opencode/opencode.json" <<OCJSON
 {
   "\$schema": "https://opencode.ai/config.json",
-  "plugins": ["$ACP_DIST"],
+  "plugins": ["$ACP_PLUGIN"],
   "providers": {
     "fake": {
       "name": "Fake (E2E test)",

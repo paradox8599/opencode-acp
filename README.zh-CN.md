@@ -28,7 +28,7 @@
 </p>
 
 <p align="center">
-<code>opencode plugin opencode-acp@stable --global</code>
+<code>plugins: ["github:paradox8599/opencode-acp"]</code>
 </p>
 
 ---
@@ -88,19 +88,27 @@ ACP 将上下文管理的所有权限全部交给模型自己，而不依靠外�
 
 ## 安装
 
-需要 **OpenCode 2.0 或更新版本**（`@opencode/cli` + `@opencode/plugin`）。ACP 2.x 仅使用 V2 插件 API —— OpenCode 1.x 请继续使用 ACP 1.18.x。
+需要 **OpenCode 2.0 或更新版本**（`@opencode/cli`）。ACP 采用源码直装：OpenCode 直接加载仓库源码并自动安装其运行时依赖 —— 无需构建。
 
-```bash
-opencode plugin add opencode-acp@stable
-```
-
-或者添加到你的 opencode 配置中：
+在你的 `opencode.json` 中加入：
 
 ```jsonc
 {
-    "plugins": ["opencode-acp@stable"]
+    "plugins": ["github:paradox8599/opencode-acp"],
+    "compaction": { "auto": false }
 }
 ```
+
+本地开发时，把 `plugins` 指向你的工作副本即可：
+
+```jsonc
+{
+    "plugins": ["/absolute/path/to/opencode-acp"],
+    "compaction": { "auto": false }
+}
+```
+
+修改插件列表后重启 OpenCode（会话里执行 `/acp help` 可验证是否加载成功）。
 
 ---
 
@@ -489,7 +497,7 @@ ACP 暴露六个可编辑的 prompt：
 ACP 是 DCP 的直接替代品。迁移步骤：
 
 1. 从 `opencode.json` 中移除旧的 DCP 插件
-2. 安装 ACP：`opencode plugin opencode-acp@stable --global`
+2. 安装 ACP：在 `opencode.json` 的 `plugins` 数组中加入 `"github:paradox8599/opencode-acp"`
 3. 复制配置：`cp ~/.config/opencode/dcp.jsonc ~/.config/opencode/acp.jsonc`
 4. 复制 prompt 覆盖（如有）：`cp -r ~/.config/opencode/dcp-prompts ~/.config/opencode/acp-prompts`
 5. 复制会话状态（可选，保留压缩块）：`cp -r ~/.local/share/opencode/storage/plugin/dcp ~/.local/share/opencode/storage/plugin/acp`

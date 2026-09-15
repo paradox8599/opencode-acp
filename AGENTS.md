@@ -18,11 +18,11 @@ ACP is a hardened fork of [DCP](https://github.com/Tarquinen/opencode-dynamic-co
 | ------------------ | ------------------------------------------------------------ |
 | Language           | TypeScript (strict, ESM)                                     |
 | Runtime            | Node.js                                                      |
-| Build              | `tsup` (bundling) + `tsc --emitDeclarationOnly` (types)      |
+| Build              | None — source-direct entry (`index.ts`); `tsc --noEmit` for checking |
 | Test Runner        | Node.js built-in: `node --import tsx --test tests/*.test.ts` |
 | Package Manager    | npm                                                          |
 | Linting/Formatting | Prettier                                                     |
-| Plugin SDK         | `@opencode-ai/plugin` >=1.4.3, `@opencode-ai/sdk` >=1.4.3    |
+| Plugin SDK         | `@opencode/plugin` 2.0.3 (devDependency; OpenCode V2 plugin API) |
 | Tokenizer          | `@anthropic-ai/tokenizer`                                    |
 | Config Parsing     | `jsonc-parser`                                               |
 | Validation         | `zod`                                                        |
@@ -126,6 +126,13 @@ opencode-acp/
 │   │   ├── notification.ts           # Compression notification builder (chat/toast, minimal/detailed)
 │   │   └── utils.ts                  # UI formatting utilities
 │   │
+│   ├── v2/                           # OpenCode V2 plugin adapter layer
+│   │   ├── ai-adapter.ts             # @opencode/ai Message[] ⇄ internal WithParts
+│   │   ├── session-adapter.ts        # session.context() messages → internal model
+│   │   ├── host.ts                   # Client facade (session/catalog) + notices
+│   │   ├── context-handler.ts        # ctx.session.hook("context") pipeline wrapper
+│   │   └── tool.ts / tools.ts        # zod tool definitions → V2 tool values
+│   │
 │   └── update.ts                     # Auto-update check and notification
 │
 ├── devlog/                           # Development iteration logs (templates + per-iteration entries)
@@ -145,8 +152,7 @@ opencode-acp/
 ├── lib/config-validation.ts          # Pure validation logic (extracted from config.ts for testability)
 ├── dcp.schema.json                   # JSON schema for config validation
 ├── tsconfig.json                     # TypeScript config
-├── tsup.config.ts                    # Build config
-└── package.json                      # Package manifest
+└── package.json                      # Package manifest (source entry: index.ts)
 ```
 
 ### 2.2 Core Data Flow
@@ -316,24 +322,24 @@ ACP maintains **backward compatibility** with DCP in internal code:
 
 ## 3. Development Standards
 
-### 3.1 Build Commands
+### 3.1 Commands
 
 ```bash
-npm run clean          # Remove dist/
-npm run build          # Clean + tsup + tsc --emitDeclarationOnly
 npm run typecheck      # TypeScript type checking (no emit)
 npm run test           # Run tests: node --import tsx --test tests/*.test.ts
 npm run format         # Format with Prettier
 npm run format:check   # Check formatting
 npm run verify:package # Verify package contents before publish
-npm run check:package  # Build + verify
+npm run check:package  # Typecheck + verify
 ```
 
-### 3.2 Build Output
+### 3.2 Packaging (source-direct)
 
-- `dist/` — bundled JavaScript (ESM)
-- `dist/*.d.ts` — TypeScript declaration files
-- Published files (per `files` field in package.json): `dist/`, `README.md`, `LICENSE`
+The package ships **TypeScript source**: `exports` points at `index.ts`, and OpenCode loads it through Bun's TS support. There is no bundling step and no `dist/`.
+
+- Published files (per `files` field): `index.ts`, `lib/`, `README.md`, `LICENSE`
+- Runtime dependencies are installed by OpenCode's plugin installer (`~/.cache/opencode/npm/...`); devDependencies are never installed
+- `@opencode/plugin` is a **devDependency** and must stay type-only at runtime (verified by `verify:package`)
 
 ### 3.3 Testing
 
@@ -369,31 +375,21 @@ CI is configured via GitHub Actions (PR #2): typecheck + test + build on Node 22
 - `commands/*.ts` — slash command handlers
 - `ui/notification.ts` — notification builder
 
-### 3.4 Deployment (Local Testing)
+### 3.4 Local Testing (source-direct)
 
-**One command** — build + deploy to the local opencode plugin cache:
+There is no build or deploy step: point OpenCode at this checkout once, then restart it after code changes.
 
-```bash
-./scripts/dev-deploy.sh           # Type check + build + deploy
-./scripts/dev-deploy.sh --check   # Tests + type check + build + deploy
-./scripts/dev-deploy.sh --no-build # Deploy existing dist/ only
+```jsonc
+// ~/.config/opencode/opencode.jsonc
+{
+    "plugins": ["/absolute/path/to/opencode-acp"]
+}
 ```
 
-opencode resolves `opencode-acp@latest` to:
-
-```
-~/.cache/opencode/packages/opencode-acp@latest/node_modules/opencode-acp/
-```
-
-**⚠️ Restart opencode after deploying** — the running process caches the module in memory. To pick up changes, kill the opencode process and restart.
-
-**Verify the deployed bundle has your changes:**
-
-```bash
-grep -c 'your-feature-name' ~/.cache/opencode/packages/opencode-acp@latest/node_modules/opencode-acp/dist/index.js
-```
-
-**Common mistake**: Deploying to `~/.cache/opencode/node_modules/opencode-acp/` (wrong path — that's the old resolution path, not where `@latest` resolves).
+- The entry is `index.ts` — edit source and restart OpenCode to pick changes up.
+- End users install from GitHub instead: `"github:paradox8599/opencode-acp"`.
+- **⚠️ Restart OpenCode** after changing the plugin list or the source — the running process caches modules in memory.
+- Local-path plugins resolve imports from this repo's `node_modules`; GitHub-installed plugins get their `dependencies` installed by OpenCode's installer.
 
 **ACP debug logs** (for verifying injection behavior):
 
@@ -496,7 +492,7 @@ All changes MUST follow this workflow:
 1. Create a feature branch from `master` (naming: `YYYY-MM-DD_short-title`)
 2. Create devlog entry: `devlog/{YYYY-MM-DD_short-title}/` with `REQ.md` (see Section 5.1.2)
 3. Implement changes
-4. Ensure `npm run build` and `npm run typecheck` pass
+4. Ensure `npm run typecheck` and `npm run verify:package` pass
 5. Ensure all tests pass: `npm run test`
 6. Commit with descriptive messages (include devlog files)
 7. Push branch and create a GitHub PR
@@ -575,8 +571,8 @@ Problems discovered or fixed while working MUST leave a trace in the issue track
 
 ### 5.2 After Making Changes
 
-1. `npm run build` must pass
-2. `npm run typecheck` must pass
+1. `npm run typecheck` must pass
+2. `npm run verify:package` must pass
 3. Run relevant tests
 4. Deploy locally and test in opencode
 5. Update version in `package.json` before publishing
@@ -775,7 +771,7 @@ gh pr create --title "release: v{VERSION}-dev.1 — title" --body "..."
 Or via CLI:
 
 ```bash
-opencode plugin opencode-acp@dev --global
+opencode plugin add opencode-acp@dev
 ```
 
 **Key differences from stable releases**:

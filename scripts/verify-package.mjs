@@ -13,28 +13,30 @@ const builtinNames = new Set([
     ...builtinModules.map((name) => name.replace(/^node:/, "")),
 ])
 
-const requiredRepoFiles = ["dist/index.js", "dist/index.d.ts", "README.md", "LICENSE"]
+const requiredRepoFiles = ["index.ts", "lib/version.ts", "lib/v2/ai-adapter.ts", "README.md", "LICENSE"]
 
 const requiredTarballFiles = [
     "package.json",
-    "dist/index.js",
-    "dist/index.d.ts",
+    "index.ts",
+    "lib/version.ts",
+    "lib/v2/ai-adapter.ts",
     "README.md",
     "LICENSE",
 ]
 
 const forbiddenTarballPatterns = [
     /^node_modules\//,
-    /^lib\//,
-    /^index\.ts$/,
     /^tests\//,
     /^scripts\//,
+    /^devlog\//,
+    /^paper\//,
     /^docs\//,
     /^assets\//,
     /^notes\//,
     /^\.github\//,
     /^package-lock\.json$/,
     /^tsconfig\.json$/,
+    /\.tgz$/,
 ]
 
 const packageInfoCache = new Map()
@@ -55,20 +57,24 @@ function assertRepoFilesExist() {
 function assertPackageJsonShape() {
     const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"))
 
-    if (pkg.main !== "./dist/index.js") {
-        fail(`package.json main must remain ./dist/index.js, found ${pkg.main ?? "<missing>"}`)
+    if (pkg.main !== "./index.ts") {
+        fail(`package.json main must be ./index.ts, found ${pkg.main ?? "<missing>"}`)
     }
 
-    if (pkg.exports?.["."]?.import !== "./dist/index.js") {
-        fail("expected package.json exports['.'].import to be './dist/index.js'")
+    if (pkg.exports?.["."] !== "./index.ts") {
+        fail("expected package.json exports['.'] to be './index.ts'")
     }
 
-    if (pkg.exports?.["./server"]?.import !== "./dist/index.js") {
-        fail("expected package.json exports['./server'].import to be './dist/index.js'")
+    if (pkg.exports?.["./server"] !== "./index.ts") {
+        fail("expected package.json exports['./server'] to be './index.ts'")
+    }
+
+    if (pkg.dependencies?.["@opencode/plugin"] !== undefined) {
+        fail("@opencode/plugin must stay a devDependency (runtime imports must be type-only)")
     }
 
     const files = Array.isArray(pkg.files) ? pkg.files : []
-    for (const entry of ["dist/", "README.md", "LICENSE"]) {
+    for (const entry of ["index.ts", "lib/", "README.md", "LICENSE"]) {
         if (!files.includes(entry)) {
             fail(`package.json files must include ${entry}`)
         }
@@ -210,11 +216,9 @@ function validateRuntimeImportGraph() {
 }
 
 function validatePackedFiles() {
-    // --ignore-scripts: the `prepare` hook (added in #298) runs `npm run build`,
-    // whose tsup output ("CLI Building entry: index.ts") pollutes stdout and
-    // breaks JSON.parse. dist/ is already built by `check:package` before this
-    // runs, and pr-artifact.yml publishes with --ignore-scripts for the same
-    // reason.
+    // --ignore-scripts: keeps npm lifecycle output off stdout so the JSON
+    // stays parseable, and the source-direct package intentionally runs no
+    // build step.
     const output = execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
         cwd: root,
         encoding: "utf8",

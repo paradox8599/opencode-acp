@@ -2,11 +2,9 @@ import { writeFile, mkdir } from "fs/promises"
 import { join } from "path"
 import { existsSync } from "fs"
 import { homedir } from "os"
+import { ACP_VERSION } from "./version"
 
-/** ACP version, injected at build time by tsup define */
-declare const ACP_VERSION: string | undefined
-
-const LOG_VERSION = typeof ACP_VERSION !== "undefined" ? ACP_VERSION : "dev"
+const LOG_VERSION = ACP_VERSION
 
 /**
  * Log verbosity. Production default is `info` — decision-level events
