@@ -15,7 +15,7 @@ import { findBiliProxyProviders } from "./lib/bili-proxy"
 import { startAutoUpdate } from "./lib/update"
 import { createAcpHost } from "./lib/v2/host"
 import { createV2ContextHandler } from "./lib/v2/context-handler"
-import { withHallucinationFilter } from "./lib/v2/hallucination-filter"
+import { scrubProviderResponseBody } from "./lib/v2/http-response-filter"
 import { toV2Tool } from "./lib/v2/tools"
 import { applyUsageTotals, sumUsageTokens, type V2UsageTokens } from "./lib/v2/usage"
 import { ACP_VERSION } from "./lib/version"
@@ -116,30 +116,12 @@ const plugin: Plugin.Plugin = {
         // Model output hygiene: the model sometimes echoes the dcp-message-id
         // tags it sees in its context into its own reply (with an invented
         // token count). V1 stripped those in `experimental.text.complete`; V2
-        // has no such hook, so the same cleanup runs on the model stream —
-        // before the harness persists or displays the text. See
-        // lib/v2/hallucination-filter.ts.
-        //
-        // The event ships WITHOUT a model: core only uses `event.language` when
-        // a hook supplies it and otherwise falls back to
-        // `sdk.languageModel(...)` itself (packages/core/src/aisdk.ts), so the
-        // wrapper has to build that same fallback here to become the model
-        // core caches and streams through.
-        await ctx.aisdk.hook("language", (event) => {
-            let base = event.language
-            if (!base) {
-                const modelID = event.model?.modelID ?? event.model?.id
-                try {
-                    if (modelID && typeof event.sdk?.languageModel === "function") {
-                        base = event.sdk.languageModel(modelID)
-                    }
-                } catch {
-                    // Leave `language` unset: core keeps its own fallback and
-                    // surfaces the provider's error with better context.
-                    base = undefined
-                }
-            }
-            if (base) event.language = withHallucinationFilter(base)
+        // has no such hook, and the `aisdk` "language" hook never fires for
+        // external plugins (verified in 2.0.3), so the cleanup runs on the
+        // provider's raw HTTP response — the only output-side hook the harness
+        // dispatches. See lib/v2/http-response-filter.ts.
+        await ctx.session.hook("http.response", (event) => {
+            event.response = scrubProviderResponseBody(event.response)
         })
 
         if (config.compress.permission === "ask") {

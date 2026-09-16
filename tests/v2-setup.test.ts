@@ -28,7 +28,6 @@ const { default: plugin } = await import("../index")
 
 interface FakeContext {
     hooks: Map<string, (event: any) => unknown>
-    aiHooks: Map<string, (event: any) => unknown>
     tools: Array<{ name: string; description: string; input: unknown }>
     commands: Array<{ name: string; description?: string; execute: (input: any) => Promise<void> }>
     synthetics: Array<{ sessionID: string; text: string; description?: string; metadata?: unknown }>
@@ -41,7 +40,6 @@ function makeContext(options: {
 }): { ctx: any; fake: FakeContext } {
     const fake: FakeContext = {
         hooks: new Map(),
-        aiHooks: new Map(),
         tools: [],
         commands: [],
         synthetics: [],
@@ -105,12 +103,6 @@ function makeContext(options: {
                 return { dispose: async () => {} }
             },
         },
-        aisdk: {
-            hook: async (name: string, callback: (event: any) => unknown) => {
-                fake.aiHooks.set(name, callback)
-                return { dispose: async () => {} }
-            },
-        },
     }
 
     return { ctx, fake }
@@ -138,8 +130,10 @@ test("setup registers context hook, ACP tools and commands", async () => {
         "the /acp command plus /dcp alias must be registered",
     )
 
-    const languageHook = fake.aiHooks.get("language")
-    assert.ok(languageHook, "the language hook (hallucination filter) must be registered")
+    assert.ok(
+        fake.hooks.has("http.response"),
+        "the provider-response hook (hallucination filter) must be registered",
+    )
     for (const tool of fake.tools) {
         assert.ok(tool.description.length > 0, `${tool.name} must carry a description`)
         assert.ok(tool.input, `${tool.name} must carry an input schema`)
@@ -148,116 +142,33 @@ test("setup registers context hook, ACP tools and commands", async () => {
 
 const LEAKED_TAG = '<dcp-message-id tokens="104" type="text">m00041</dcp-message-id>'
 
-/** Minimal `LanguageModelV3` whose stream emits a hallucinated dcp tag. */
-function fakeLanguage(): any {
-    return {
-        specificationVersion: "v3",
-        provider: "test",
-        modelId: "model",
-        supportedUrls: {},
-        doGenerate: async () => undefined,
-        doStream: async () => ({
-            stream: new ReadableStream({
-                start(controller) {
-                    controller.enqueue({ type: "text-start", id: "t1" })
-                    controller.enqueue({
-                        type: "text-delta",
-                        id: "t1",
-                        delta: `hello ${LEAKED_TAG} world`,
-                    })
-                    controller.enqueue({ type: "text-end", id: "t1" })
-                    controller.close()
-                },
-            }),
+test("http.response hook scrubs hallucinated tags out of provider bodies", async () => {
+    writeAcpConfig({})
+    const { ctx, fake } = makeContext({
+        models: [{ providerID: "test", id: "model", limit: { context: 100_000 } }],
+    })
+    await plugin.setup(ctx)
+
+    const responseHook = fake.hooks.get("http.response")
+    assert.ok(responseHook, "the provider-response hook (hallucination filter) must be registered")
+
+    // Production shape: the payload is JSON, so the tag's quotes arrive escaped.
+    const payload = { choices: [{ delta: { content: `hello ${LEAKED_TAG} world` } }] }
+    const event: any = {
+        request: new Request("https://provider.test/v1/chat/completions"),
+        response: new Response(`data: ${JSON.stringify(payload)}\n\ndata: [DONE]\n\n`, {
+            headers: { "content-type": "text/event-stream" },
         }),
     }
-}
 
-async function streamText(model: any): Promise<string> {
-    const { stream } = await model.doStream({})
-    const reader = stream.getReader()
-    let text = ""
-    for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value.type === "text-delta") text += value.delta
-    }
-    return text
-}
+    await responseHook(event)
 
-test("language hook supplies a wrapped model built from the SDK fallback", async () => {
-    writeAcpConfig({})
-    const { ctx, fake } = makeContext({
-        models: [{ providerID: "test", id: "model", limit: { context: 100_000 } }],
-    })
-    await plugin.setup(ctx)
+    const text = await event.response.text()
+    assert.equal(text.includes("dcp-message-id"), false, "tags must not reach the harness")
+    assert.equal(text.includes("data: [DONE]"), true, "untouched events must survive")
 
-    const languageHook = fake.aiHooks.get("language")
-    assert.ok(languageHook, "the language hook (hallucination filter) must be registered")
-
-    // Production shape: the event ships without a `language` field — core only
-    // uses what a hook supplies and otherwise falls back to sdk.languageModel().
-    const sdkModel = fakeLanguage()
-    const event: any = {
-        model: { id: "model" },
-        sdk: { languageModel: (id: string) => sdkModel },
-        options: {},
-    }
-    await languageHook(event)
-
-    assert.ok(
-        event.language,
-        "the hook must supply a model — core falls back to sdk.languageModel() only when `language` stays unset",
-    )
-    assert.notEqual(event.language, sdkModel, "the supplied model must be the wrapped one")
-    assert.equal(event.language.modelId, "model", "the wrapped model must keep the identity fields")
-
-    const text = await streamText(event.language)
-    assert.ok(
-        !text.includes("dcp-message-id"),
-        "hallucinated tags must be stripped from the stream",
-    )
-    assert.equal(text, "hello  world", "clean text must survive the filter")
-})
-
-test("language hook wraps a model from an earlier hook and tolerates missing SDK models", async () => {
-    writeAcpConfig({})
-    const { ctx, fake } = makeContext({
-        models: [{ providerID: "test", id: "model", limit: { context: 100_000 } }],
-    })
-    await plugin.setup(ctx)
-
-    const languageHook = fake.aiHooks.get("language")
-    assert.ok(languageHook, "the language hook (hallucination filter) must be registered")
-
-    const provided = fakeLanguage()
-    const withModel: any = { model: { id: "model" }, sdk: {}, options: {}, language: provided }
-    await languageHook(withModel)
-    assert.notEqual(withModel.language, provided, "an earlier hook's model must still be wrapped")
-
-    const noSdkModel: any = { model: { id: "model" }, sdk: {}, options: {} }
-    await languageHook(noSdkModel)
-    assert.equal(
-        noSdkModel.language,
-        undefined,
-        "without an SDK model the hook must leave `language` unset",
-    )
-
-    const throwingSdk: any = {
-        model: { id: "model" },
-        sdk: {
-            languageModel: () => {
-                throw new Error("boom")
-            },
-        },
-        options: {},
-    }
-    await languageHook(throwingSdk)
-    assert.equal(
-        throwingSdk.language,
-        undefined,
-        "a throwing SDK must not fail model resolution — core keeps its own fallback",
-    )
+    const parsed = JSON.parse(text.split("\n\n")[0].slice("data: ".length))
+    assert.equal(parsed.choices[0].delta.content, "hello  world", "clean text must survive")
 })
 
 test("setup stays off when a /bili/ proxy provider is configured", async () => {
@@ -274,7 +185,6 @@ test("setup stays off when a /bili/ proxy provider is configured", async () => {
     await plugin.setup(ctx)
 
     assert.equal(fake.hooks.size, 0, "no hooks may be registered behind the bili proxy")
-    assert.equal(fake.aiHooks.size, 0, "no language hook may be registered behind the bili proxy")
     assert.equal(fake.tools.length, 0, "no tools may be registered behind the bili proxy")
     assert.equal(fake.commands.length, 0, "no commands may be registered behind the bili proxy")
 })
@@ -285,10 +195,10 @@ test('compress.permission "deny" registers no tools or commands', async () => {
 
     await plugin.setup(ctx)
 
-    assert.equal(fake.hooks.size, 0)
-    assert.ok(
-        fake.aiHooks.has("language"),
-        "the language hook stays active when only compression tools are denied",
+    assert.deepEqual(
+        [...fake.hooks.keys()],
+        ["http.response"],
+        "only the response scrubber stays active when compression tools are denied",
     )
     assert.equal(fake.tools.length, 0)
     assert.equal(fake.commands.length, 0)

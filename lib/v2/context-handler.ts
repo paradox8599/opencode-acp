@@ -70,7 +70,11 @@ export function createV2ContextHandler(
             const imported = importV2Messages(event.messages, {
                 sessionID: event.sessionID,
                 agent: event.agent,
-                model: { providerID: event.model.providerID, modelID: event.model.id, variant: event.model.variant },
+                model: {
+                    providerID: event.model.providerID,
+                    modelID: event.model.id,
+                    variant: event.model.variant,
+                },
             })
 
             // Resolve session state before stripping: hidden output ids are
@@ -113,8 +117,10 @@ export function createV2ContextHandler(
 
             injectSystemPrompt(event)
 
-            const exported = imported.exportV2Messages()
-            event.messages.splice(0, event.messages.length, ...exported)
+            // Replace the message list on the event instead of mutating the array in place:
+            // the caller keeps its own (untagged) messages, so the injected refs never leak
+            // into the session store when the harness persists the request it sent.
+            event.messages = imported.exportV2Messages()
         } catch (error) {
             logger.warn("ACP V2 context transform failed; passing context through", {
                 sessionId: event.sessionID,
