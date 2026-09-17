@@ -105,7 +105,7 @@ const plugin: Plugin.Plugin = {
         // [FIX #337] Manual proxy mode: a provider baseURL routed through the
         // bili proxy means the proxy handles context compression — ACP must
         // stay fully off, mirroring the BILLION_CONTEXT_PROXY env guard.
-        const disabledByBiliProxy = await detectBiliProxy(ctx)
+        const disabledByBiliProxy = await detectBiliProxy(ctx, logger)
         if (disabledByBiliProxy) {
             console.log(
                 "[opencode-acp] disabled: /bili/ proxy detected in provider baseURL — proxy handles compression",
@@ -243,11 +243,18 @@ const plugin: Plugin.Plugin = {
 
 export default plugin
 
-async function detectBiliProxy(ctx: {
-    catalog: { provider: { list(): Promise<unknown> } }
-}): Promise<boolean> {
+async function detectBiliProxy(
+    ctx: {
+        /**
+         * Host provider catalog. @opencode/plugin 2.0.4 moved this from
+         * `ctx.catalog.provider` to `ctx.provider`.
+         */
+        provider: { list(): Promise<unknown> }
+    },
+    logger: Logger,
+): Promise<boolean> {
     try {
-        const payload = await ctx.catalog.provider.list()
+        const payload = await ctx.provider.list()
         const providers = Array.isArray(payload)
             ? payload
             : Array.isArray((payload as { data?: unknown })?.data)
@@ -266,7 +273,11 @@ async function detectBiliProxy(ctx: {
             }
         }
         return findBiliProxyProviders(shaped).length > 0
-    } catch {
+    } catch (error) {
+        // Never silent: swallowing this hid a broken catalog call for days.
+        logger.warn("bili-proxy detection failed", {
+            error: error instanceof Error ? error.message : String(error),
+        })
         return false
     }
 }

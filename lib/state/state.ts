@@ -15,7 +15,7 @@ import {
     resolveStorageDir,
     saveSessionState,
 } from "./persistence"
-import { createModelLimitCatalog } from "./model-limits"
+import { createModelLimitCatalog, type ModelLimitCatalog } from "./model-limits"
 import { rebuildCompressionState, restoreForkCompressionState } from "./rebuild"
 import {
     getSessionParentId,
@@ -100,12 +100,16 @@ export class SessionStateRegistry {
     // model named on the request's user message instead of waiting one turn
     // for the system hook. Shared implementation — the test registry stub
     // composes the same factory.
-    private readonly catalog = createModelLimitCatalog()
+    private readonly catalog: ModelLimitCatalog
 
     constructor(
         private readonly logger: Logger,
         private readonly projectDir?: string,
-    ) {}
+    ) {
+        // Assigned here rather than as a field initializer so the catalog gets
+        // the logger (hydration failures must never be silent).
+        this.catalog = createModelLimitCatalog(logger)
+    }
 
     recordModelLimit(
         providerId: string | undefined,

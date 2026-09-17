@@ -47,16 +47,19 @@ function makeContext(options: {
     }
 
     const ctx = {
-        app: { name: "test", version: "2.0.3", channel: "test" },
+        app: { name: "test", version: "2.0.5", channel: "test" },
         location: {
             directory: process.cwd(),
             project: { id: "proj", directory: process.cwd(), canonical: process.cwd() },
         },
         options: {},
-        catalog: {
-            provider: { list: async () => ({ data: options.providers ?? [] }) },
-            model: { list: async () => ({ data: options.models ?? [] }) },
-        },
+        // @opencode/plugin 2.0.4+ host shape: `provider` and `model` are
+        // top-level domains; the pre-2.0.4 `catalog` wrapper no longer exists.
+        // This fixture used to mock `catalog` — i.e. it substituted ACP's own
+        // wrong assumption for the real host API, which is how the drift broke
+        // in production while every test stayed green.
+        provider: { list: async () => ({ data: options.providers ?? [] }) },
+        model: { list: async () => ({ data: options.models ?? [] }) },
         session: {
             hook: async (name: string, callback: (event: any) => unknown) => {
                 fake.hooks.set(name, callback)

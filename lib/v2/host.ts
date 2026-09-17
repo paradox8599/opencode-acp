@@ -31,9 +31,12 @@ export interface V2HostContext {
             metadata?: Record<string, JsonValue>
         }): Promise<unknown>
     }
-    catalog: {
-        model: { list(): Promise<unknown> }
-    }
+    /**
+     * Host model catalog. @opencode/plugin 2.0.4 moved this from
+     * `ctx.catalog.model` to `ctx.model`; 2.0.3's `ctx.catalog` is gone, so the
+     * old path raised a TypeError against every 2.0.4+ host.
+     */
+    model: { list(): Promise<unknown> }
 }
 
 export interface AcpClientFacade {
@@ -163,7 +166,7 @@ function extractMessageId(result: unknown): string | undefined {
 }
 
 async function buildProvidersPayload(ctx: V2HostContext) {
-    const payload = await ctx.catalog.model.list()
+    const payload = await ctx.model.list()
     const models = Array.isArray(payload)
         ? payload
         : Array.isArray((payload as { data?: unknown })?.data)

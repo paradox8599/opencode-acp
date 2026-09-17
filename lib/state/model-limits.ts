@@ -11,13 +11,24 @@
  * limit. This catalog lets the messages hook reconcile against the model
  * named on the request's user message instead of waiting one turn.
  *
- * Entries are recorded live by the system hook every request and seeded once
- * at plugin init from the host's /config/providers catalog.
+ * Entries are recorded live by the messages hook (in V2 there is no
+ * system-transform hook, so that hook is the only writer) and seeded once at
+ * plugin init from the host's model catalog — `ctx.model.list()`, surfaced to
+ * the pipeline as `client.config.providers()`.
+ *
+ * [2026-09-17] The host moved this API from `ctx.catalog.model` to `ctx.model`
+ * in @opencode/plugin 2.0.4. Calling the old path raised a TypeError that the
+ * catch below swallowed, so the catalog stayed permanently empty while looking
+ * exactly like "the host has no model limits". Every session then fell back to
+ * `compress.contextLimitFallback` (128000) and treated a 1M-window model as
+ * critically full. Do not remove the error log.
  *
  * Standalone factory (not embedded in SessionStateRegistry) so the test
  * registry stub can compose the SAME implementation instead of hand-rolling
  * a drift-prone copy.
  */
+import type { Logger } from "../logger"
+
 export interface ModelLimitCatalog {
     record(
         providerId: string | undefined,
@@ -28,7 +39,7 @@ export interface ModelLimitCatalog {
     hydrateFromClient(client: unknown): Promise<number>
 }
 
-export function createModelLimitCatalog(): ModelLimitCatalog {
+export function createModelLimitCatalog(logger?: Logger): ModelLimitCatalog {
     const modelLimits = new Map<string, number>()
     return {
         record(providerId, modelId, limit) {
@@ -40,9 +51,11 @@ export function createModelLimitCatalog(): ModelLimitCatalog {
             return modelLimits.get(`${providerId}/${modelId}`)
         },
         /**
-         * Best-effort one-time seed from the host's provider catalog
-         * (`client.config.providers()` → GET /config/providers). Never throws;
-         * returns the number of model-limit entries recorded.
+         * Best-effort one-time seed from the host's model catalog
+         * (`client.config.providers()` → `ctx.model.list()`). Never throws;
+         * returns the number of model-limit entries recorded. Failures are
+         * logged: returning 0 silently is what let host API drift masquerade
+         * as "no models configured" for three days.
          */
         async hydrateFromClient(client: unknown): Promise<number> {
             try {
@@ -70,7 +83,10 @@ export function createModelLimitCatalog(): ModelLimitCatalog {
                     }
                 }
                 return recorded
-            } catch {
+            } catch (error) {
+                logger?.warn("Model limit catalog hydration failed", {
+                    error: error instanceof Error ? error.message : String(error),
+                })
                 return 0
             }
         },
